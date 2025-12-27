@@ -87,14 +87,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               'Upload complete! Size: ${uploadResult.processedWidth}x${uploadResult.processedHeight}',
             );
 
-        // Now tell Arduino to update from cloud
-        ref
-            .read(logProvider.notifier)
-            .info('Sending update command to E-Paper...');
-        final result = await arduinoService.updateImage(slot);
-        if (!result.success) {
-          throw Exception(result.error);
-        }
+        // // Now tell Arduino to update from cloud
+        // ref
+        //     .read(logProvider.notifier)
+        //     .info('Sending update command to E-Paper...');
+        // final result = await arduinoService.updateImage(slot);
+        // if (!result.success) {
+        //   throw Exception(result.error);
+        // }
       } else {
         // For preset images, just show the existing slot
         ref.read(logProvider.notifier).info('Displaying slot $slot...');

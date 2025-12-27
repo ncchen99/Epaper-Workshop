@@ -30,6 +30,7 @@
 ******************************************************************************/
 #include "EPD_4in0e.h"
 #include "Debug.h"
+#include <Arduino.h>  // 需要 yield() 函式來防止看門狗重置
 
 /******************************************************************************
 function :  Software reset
@@ -79,6 +80,7 @@ static void EPD_4IN0E_ReadBusyH(void)
 {
     Debug("e-Paper busy H\r\n");
     while(!DEV_Digital_Read(EPD_BUSY_PIN)) {      //LOW: busy, HIGH: idle
+        yield();  // 讓出 CPU 給 WiFi 堆疊和看門狗，防止系統卡死
         DEV_Delay_ms(10);
     }
     DEV_Delay_ms(200);
@@ -203,6 +205,7 @@ void EPD_4IN0E_Clear(UBYTE color)
         for (UWORD i = 0; i < Width; i++) {
             EPD_4IN0E_SendData((color<<4)|color);
         }
+        if (j % 50 == 0) yield();  // 每 50 行餵狗一次，防止看門狗重置
     }
 
     EPD_4IN0E_TurnOnDisplay();
@@ -222,6 +225,7 @@ void EPD_4IN0E_Show7Block(void)
     for(k = 0 ; k < 6; k ++) {
         for(j = 0 ; j < 20000; j ++) {
             EPD_4IN0E_SendData((Color_seven[k]<<4) |Color_seven[k]);
+            if (j % 1000 == 0) yield();  // 餵狗防止看門狗重置
         }
     }
     EPD_4IN0E_TurnOnDisplay();
@@ -264,6 +268,7 @@ void EPD_4IN0E_Show(void)
         o++ ;
         if(o >= Height)
             o = 0;
+        if (j % 50 == 0) yield();  // 餵狗防止看門狗重置
     }
     EPD_4IN0E_TurnOnDisplay();
 }
@@ -283,6 +288,7 @@ void EPD_4IN0E_Display(const UBYTE *Image)
         for (UWORD i = 0; i < Width; i++) {
             EPD_4IN0E_SendData(Image[i + j * Width]);
         }
+        if (j % 50 == 0) yield();  // 每 50 行餵狗一次，防止看門狗重置
     }
     EPD_4IN0E_TurnOnDisplay();
 }
@@ -304,6 +310,7 @@ void EPD_4IN0E_DisplayPart(const UBYTE *Image, UWORD xstart, UWORD ystart, UWORD
 				EPD_4IN0E_SendData(0x11);
 			}
 		}
+		if (i % 50 == 0) yield();  // 餵狗防止看門狗重置
 	}
 	EPD_4IN0E_TurnOnDisplay();
 }

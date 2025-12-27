@@ -88,6 +88,9 @@ const unsigned long LONG_PRESS_DURATION = 3000; // 長按門檻時間（3000ms =
 // 避免在 AsyncWebServer callback 中執行耗時操作（會觸發 Watchdog Timer）
 volatile int updateSlotObj = 0; // 標記需要更新的 slot (1-3)，0 表示無需更新
 volatile int showSlotObj = 0;   // 標記需要顯示的 slot (1-3)，0 表示無需顯示
+volatile int processUploadSlotObj = 0; // 標記需要處理上傳檔案的 slot (1-3)，0 表示無需處理
+volatile bool uploadFileReady = false; // 標記上傳檔案是否已準備好
+volatile bool isProcessing = false; // 標記是否正在處理長時間操作（防止重複觸發）
 
 //------------------------ LED 控制函式 ------------------------------//
 // 這個函式用來控制板子上的 NeoPixel LED 顯示顏色
@@ -259,6 +262,9 @@ void doneCallback(pngle_t *pngle) {
       pixelPairIndex = 0;
       packedPixelCount++;
     }
+    
+    // 每處理 10000 個像素餵狗一次
+    if (i % 10000 == 0) yield();
   }
 
   Serial.println("完成像素解碼數量：");
@@ -460,6 +466,9 @@ void JpegDecodeLittleFS(const String &path) {
           pixelPairIndex = 0;
           packedPixelCount++;
         }
+        
+        // 每處理 10000 個像素餵狗一次
+        if (i % 10000 == 0) yield();
       }
       Serial.println("JPEG 處理完成！");
     } else {
@@ -859,6 +868,12 @@ void setup() {
   // ========== 關鍵修正：使用 Flag 機制避免在 Callback 中執行耗時操作
   // ========== API: Show Image GET /api/show?slot=<1|2|3>
   server.on("/api/show", HTTP_GET, [](AsyncWebServerRequest *request) {
+    // 檢查是否正在處理中
+    if (isProcessing) {
+      request->send(503, "text/plain", "Busy - please wait");
+      Serial.println("API: 拒絕顯示請求 - 系統忙碌中");
+      return;
+    }
     if (request->hasParam("slot")) {
       int slot = request->getParam("slot")->value().toInt();
       if (slot >= 1 && slot <= 3) {
@@ -877,6 +892,12 @@ void setup() {
   // API: Update Image
   // GET /api/update?slot=<1|2|3>
   server.on("/api/update", HTTP_GET, [](AsyncWebServerRequest *request) {
+    // 檢查是否正在處理中
+    if (isProcessing) {
+      request->send(503, "text/plain", "Busy - please wait");
+      Serial.println("API: 拒絕更新請求 - 系統忙碌中");
+      return;
+    }
     if (request->hasParam("slot")) {
       int slot = request->getParam("slot")->value().toInt();
       if (slot >= 1 && slot <= 3) {
@@ -908,16 +929,21 @@ void setup() {
           request->send(400, "text/plain", "Invalid Slot");
           return;
         }
-        // 觸發顯示（上傳的檔案已經在 onUpload 時存好了）
-        showSlotObj = slot;
-        request->send(200, "text/plain", "Upload complete, displaying...");
-        Serial.printf("API: 上傳完成 - Slot %d\n", slot);
+        // 檢查上傳檔案是否已準備好
+        if (uploadFileReady) {
+          // 使用 Flag 機制，讓 loop() 處理耗時操作
+          processUploadSlotObj = slot;
+          request->send(200, "text/plain", "Upload complete, processing...");
+          Serial.printf("API: 上傳完成 - Slot %d，等待處理\n", slot);
+        } else {
+          request->send(500, "text/plain", "Upload failed");
+        }
       },
-      // onUpload callback - handle file upload
+      // onUpload callback - handle file upload (只做檔案寫入，不做解碼)
       [](AsyncWebServerRequest *request, String filename, size_t index,
          uint8_t *data, size_t len, bool final) {
         static File uploadFile;
-        static String tempPath;
+        static String tempPath = "/temp_upload.jpg";
 
         if (!request->hasParam("slot"))
           return;
@@ -925,12 +951,11 @@ void setup() {
         if (slot < 1 || slot > 3)
           return;
 
-        tempPath = "/temp_upload.jpg";
-
         if (index == 0) {
           // First chunk - open file
           Serial.printf("Upload Start: %s (slot %d)\n", filename.c_str(), slot);
           LED(slot - 1, 160, 255, BRIGHTNESS);
+          uploadFileReady = false; // 重置標記
 
           // 刪除舊的暫存檔
           if (LittleFS.exists(tempPath)) {
@@ -949,26 +974,17 @@ void setup() {
         }
 
         if (final) {
-          // Last chunk - close file and process
+          // Last chunk - 只關閉檔案，不做解碼
           if (uploadFile) {
             uploadFile.close();
           }
           Serial.printf("Upload Complete: %d bytes\n", index + len);
           LED(slot - 1, 192, 255, BRIGHTNESS);
-
-          // 解碼 JPEG 並準備顯示
-          JpegDecodeLittleFS(tempPath);
-
-          // 存檔為 bin 供下次快速讀取
-          String binPath = "/" + String(slot) + ".bin";
-          SaveArray(binPath);
-          Serial.println("Image saved to " + binPath);
-
-          // 清理暫存檔
-          LittleFS.remove(tempPath);
-          LED(slot - 1, 64, 255, BRIGHTNESS);
+          uploadFileReady = true; // 標記檔案已準備好
+          // 注意：解碼和顯示操作會在 loop() 中執行
         }
       });
+
 
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
     request->send_P(200, "text/html", index_html);
@@ -1118,18 +1134,24 @@ void setup() {
 // ------------------ 主循環 ------------------
 // Arduino 的 loop()：會不斷重複執行
 void loop() {
+  // 讓出 CPU 給 WiFi 堆疊和其他背景任務
+  yield();
+  
   // ========== 關鍵修正：在主迴圈中處理 API 觸發的請求 ==========
   // 檢查是否有待處理的更新請求（來自 API）
-  if (updateSlotObj > 0) {
+  if (updateSlotObj > 0 && !isProcessing) {
+    isProcessing = true; // 標記開始處理
     int slot = updateSlotObj;
     updateSlotObj = 0; // 立即重置，避免重複執行
     Serial.printf("執行更新請求 - Slot %d\n", slot);
     updateImage(slot);
     Serial.println("更新完成！");
+    isProcessing = false; // 標記處理完成
   }
 
   // 檢查是否有待處理的顯示請求（來自 API）
-  if (showSlotObj > 0) {
+  if (showSlotObj > 0 && !isProcessing) {
+    isProcessing = true; // 標記開始處理
     int slot = showSlotObj;
     showSlotObj = 0; // 立即重置，避免重複執行
     Serial.printf("執行顯示請求 - Slot %d\n", slot);
@@ -1137,6 +1159,39 @@ void loop() {
     if (!success) {
       Serial.println("顯示失敗：檔案不存在，請先更新 Slot");
     }
+    isProcessing = false; // 標記處理完成
+  }
+
+  // 檢查是否有待處理的上傳檔案（來自 Upload API）
+  if (processUploadSlotObj > 0 && uploadFileReady && !isProcessing) {
+    isProcessing = true; // 標記開始處理
+    int slot = processUploadSlotObj;
+    processUploadSlotObj = 0; // 立即重置，避免重複執行
+    uploadFileReady = false;
+    Serial.printf("執行上傳處理請求 - Slot %d\n", slot);
+    
+    String tempPath = "/temp_upload.jpg";
+    
+    // 解碼 JPEG
+    Serial.println("解碼上傳的 JPEG 檔案...");
+    JpegDecodeLittleFS(tempPath);
+    
+    // 顯示圖片
+    Serial.println("正在刷新電子紙顯示器...");
+    unsigned long startTime = millis();
+    EPD_4IN0E_Display(epd_bitmap_canvas);
+    Serial.printf("電子紙刷新完成！耗時 %lu ms\n", millis() - startTime);
+    
+    // 存檔為 bin 供下次快速讀取
+    String binPath = "/" + String(slot) + ".bin";
+    SaveArray(binPath);
+    Serial.println("Image saved to " + binPath);
+    
+    // 清理暫存檔
+    LittleFS.remove(tempPath);
+    LED(slot - 1, 64, 255, BRIGHTNESS);
+    Serial.println("上傳處理完成！");
+    isProcessing = false; // 標記處理完成
   }
 
   // 讀取按鈕的當前狀態
