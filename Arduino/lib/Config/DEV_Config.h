@@ -98,16 +98,9 @@
 #define DEV_Digital_Read(_pin) digitalRead(_pin)
 
 /**
- * delay x ms (non-blocking version with yield)
- * 使用 inline 函式代替宏，確保在等待期間讓出 CPU 給 WiFi 和其他背景任務
+ * delay x ms
  **/
-inline void DEV_Delay_ms(unsigned long ms) {
-    unsigned long start = millis();
-    while (millis() - start < ms) {
-        yield();  // 讓出 CPU 給 WiFi 堆疊和看門狗
-        delay(1); // 短暫延遲，避免空轉消耗 CPU
-    }
-}
+#define DEV_Delay_ms(__xms) delay(__xms)
 
 /*------------------------------------------------------------------------------------------------------*/
 UBYTE DEV_Module_Init(void);
