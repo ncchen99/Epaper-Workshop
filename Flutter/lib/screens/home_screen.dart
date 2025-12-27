@@ -298,8 +298,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       style: LegoTypography.labelMedium.copyWith(
                         color: LegoColors.white.withValues(alpha: 0.6),
                         fontFamily: 'monospace',
-                        fontSize: 8,
-                        height: 1.8,
+                        fontSize: 10,
+                        height: 1.7,
                       ),
                     ),
                     const SizedBox(width: LegoSpacing.xs),
@@ -308,7 +308,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         entry.message,
                         style: LegoTypography.bodyMedium.copyWith(
                           color: _getLogColor(entry.level),
-                          fontSize: 10,
+                          fontSize: 12,
                         ),
                       ),
                     ),
