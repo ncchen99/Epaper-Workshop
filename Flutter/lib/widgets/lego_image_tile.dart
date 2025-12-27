@@ -7,11 +7,15 @@ import '../theme/lego_theme.dart';
 /// - Selected state with highlighted border and studs
 /// - Unselected state with subtle opacity
 /// - Tap animation
+/// - Optional 90-degree counter-clockwise rotation for portrait images
 class LegoImageTile extends StatefulWidget {
   final ImageProvider image;
   final bool isSelected;
   final VoidCallback onTap;
   final String? label;
+
+  /// If true, rotates the image 90 degrees counter-clockwise
+  final bool rotateLeft;
 
   const LegoImageTile({
     super.key,
@@ -19,6 +23,7 @@ class LegoImageTile extends StatefulWidget {
     required this.isSelected,
     required this.onTap,
     this.label,
+    this.rotateLeft = false,
   });
 
   @override
@@ -112,11 +117,22 @@ class _LegoImageTileState extends State<LegoImageTile>
                   child: AnimatedOpacity(
                     duration: const Duration(milliseconds: 200),
                     opacity: widget.isSelected ? 1.0 : 0.8,
-                    child: Image(
-                      image: widget.image,
-                      fit: BoxFit.cover,
-                      width: double.infinity,
-                    ),
+                    child:
+                        widget.rotateLeft
+                            ? RotatedBox(
+                              quarterTurns: 3, // 向左轉 90 度 (270度順時針)
+                              child: Image(
+                                image: widget.image,
+                                fit: BoxFit.cover,
+                                width: double.infinity,
+                                height: double.infinity,
+                              ),
+                            )
+                            : Image(
+                              image: widget.image,
+                              fit: BoxFit.cover,
+                              width: double.infinity,
+                            ),
                   ),
                 ),
               ),

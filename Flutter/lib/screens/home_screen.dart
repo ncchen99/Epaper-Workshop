@@ -196,7 +196,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             'Select Image',
             style: LegoTypography.titleMedium.copyWith(color: LegoColors.black),
           ),
-          const SizedBox(height: LegoSpacing.sm),
+          // const SizedBox(height: LegoSpacing.sm),
 
           // Grid of images
           GridView.builder(
@@ -206,7 +206,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               crossAxisCount: 2,
               crossAxisSpacing: LegoSpacing.md,
               mainAxisSpacing: LegoSpacing.md,
-              childAspectRatio: 1.0,
+              childAspectRatio: 1, // 改為橫向長方形比例
             ),
             itemCount: imageState.availableImages.length,
             itemBuilder: (context, index) {
@@ -215,14 +215,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
               return LegoImageTile(
                 image:
-                    image.isPreset
-                        ? AssetImage(image.assetPath)
-                        : FileImage(image.file!) as ImageProvider,
+                    image.file != null
+                        ? FileImage(image.file!) as ImageProvider
+                        : AssetImage(image.assetPath),
                 isSelected: isSelected,
                 onTap: () {
                   ref.read(imageSelectionProvider.notifier).selectImage(index);
                 },
-                label: image.isPreset ? 'Demo ${image.slot}' : 'Uploaded',
+                label: image.isDemo ? 'Demo ${image.slot}' : 'Uploaded',
+                rotateLeft: image.isDemo, // 僅 Demo 圖片需要旋轉，使用者上傳的已處理過
               );
             },
           ),
