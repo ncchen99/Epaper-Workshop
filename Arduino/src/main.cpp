@@ -9,7 +9,9 @@
 #include <HTTPClient.h>
 #include <LittleFS.h> // 小型檔案系統，提供在快閃記憶體上的檔案讀寫
 #include <WiFi.h>
+#include <WiFiClientSecure.h> // 支援 HTTPS 連線
 #include <pngle.h> // 輕量 PNG 解碼器（將 PNG 轉為 RGB 資料）
+#include <JPEGDEC.h> // JPEG 解碼器
 
 // 專案函式庫標頭檔引用，使用雙引號 "..."，表示先從 專案目錄
 // 搜尋，再去系統路徑找。 通常是你自己寫的程式檔案或專案內附的函式庫。
@@ -44,7 +46,7 @@ uint8_t *png_rgb_canvas =
 
 // ------------------ 常數設定 ------------------
 // 常數不會改變
-const char *ssid = "密碼八個八";     // 你的WiFi名稱
+const char *ssid = "fatfat";     // 你的WiFi名稱
 const char *password = "88888888"; // 你的WiFi密碼
 const char btn1Pin = A1;           // 按鈕接到的腳位編號
 const char btn2Pin = A2;           // 按鈕接到的腳位編號
@@ -53,11 +55,12 @@ const char btn3Pin = A3;           // 按鈕接到的腳位編號
 // ------------------ 雲端 URL 設定 ------------------
 // Cloudflare R2 或其他雲端儲存的 Base URL（請依實際情況修改）
 const char *CLOUD_BASE_URL =
-    "https://REMOVED_R2_PUBLIC_ID.r2.dev";
+    "https://REMOVED_R2_PUBLIC_ID.r2.dev/"; // 注意結尾要有斜線 / 
+    // "https://REMOVED_R2_PUBLIC_ID.r2.dev/"; // 注意結尾要有斜線 /
 // 三個插槽的圖片檔名（Flutter App 上傳時需覆蓋這些檔名）
 const char *SLOT1_FILENAME = "test.png"; // 插槽 1（對應按鈕 1）
-const char *SLOT2_FILENAME = "cat.png";  // 插槽 2（對應按鈕 2）
-const char *SLOT3_FILENAME = "dog.png";  // 插槽 3（對應按鈕 3）
+const char *SLOT2_FILENAME = "demo_1.png";  // 插槽 2（對應按鈕 2）
+const char *SLOT3_FILENAME = "demo_2.png";  // 插槽 3（對應按鈕 3）
 
 // ------------------ 變數宣告 ------------------
 // 變數會改變，用來記錄狀態
@@ -145,7 +148,7 @@ void initCallback(pngle_t *pngle, uint32_t w, uint32_t h) {
     free(png_rgb_canvas);
     png_rgb_canvas = nullptr;
   }
-  png_rgb_canvas = (uint8_t *)malloc(need);
+  png_rgb_canvas = (uint8_t *)ps_malloc(need);  // 使用 PSRAM 分配大型記憶體
   if (!png_rgb_canvas) {
     Serial.println("malloc RGB canvas fail");
     failed = true;
@@ -295,56 +298,234 @@ void PngDecodeLittleFS(const String &path) {
   Serial.println(failed ? "PNG 解碼失敗" : "PNG 文件解碼成功");
 }
 
-//------------------------ 下載圖片函式 ------------------------------//
-// 功能：從指定的 URL 下載 PNG 圖片，並存到 LittleFS (ESP32 的快閃檔案系統)
-void download_PNG_Url(String _url, String _target) {
-  Serial.println("開始下載 PNG...");
+//------------------------ JPEG 解碼相關 ------------------------------//
+JPEGDEC jpeg;
+File jpegFile;
 
-  const int maxRetries = 3;     // 最大重試次數（如果失敗會再試）
-  int retryCount = 0;           // 記錄已經嘗試下載的次數
-  bool downloadSuccess = false; // 標記：是否成功下載到資料
-  bool writeSuccess = false;    // 標記：是否成功把資料寫入檔案
+// JPEG 檔案開啟回調
+void *jpegOpen(const char *filename, int32_t *size) {
+  jpegFile = LittleFS.open(filename, "r");
+  if (!jpegFile) return nullptr;
+  *size = jpegFile.size();
+  return &jpegFile;
+}
+
+// JPEG 檔案關閉回調
+void jpegClose(void *handle) {
+  if (jpegFile) jpegFile.close();
+}
+
+// JPEG 檔案讀取回調
+int32_t jpegRead(JPEGFILE *handle, uint8_t *buffer, int32_t length) {
+  if (!jpegFile) return 0;
+  return jpegFile.read(buffer, length);
+}
+
+// JPEG 檔案搜尋回調
+int32_t jpegSeek(JPEGFILE *handle, int32_t position) {
+  if (!jpegFile) return 0;
+  return jpegFile.seek(position);
+}
+
+// JPEG 繪製回調 - 每個 MCU (Minimum Coded Unit) 區塊
+int jpegDrawCallback(JPEGDRAW *pDraw) {
+  // 將 RGB565 像素轉換為 RGB888 並存入 png_rgb_canvas
+  for (int y = 0; y < pDraw->iHeight; y++) {
+    for (int x = 0; x < pDraw->iWidth; x++) {
+      int destX = pDraw->x + x;
+      int destY = pDraw->y + y;
+      
+      if (destX < EPD_WIDTH && destY < EPD_HEIGHT) {
+        uint16_t pixel = pDraw->pPixels[y * pDraw->iWidth + x];
+        // RGB565 轉 RGB888
+        uint8_t r = ((pixel >> 11) & 0x1F) << 3;
+        uint8_t g = ((pixel >> 5) & 0x3F) << 2;
+        uint8_t b = (pixel & 0x1F) << 3;
+        
+        size_t idx = ((size_t)destY * EPD_WIDTH + destX) * 3;
+        png_rgb_canvas[idx + 0] = r;
+        png_rgb_canvas[idx + 1] = g;
+        png_rgb_canvas[idx + 2] = b;
+      }
+    }
+  }
+  return 1; // 繼續解碼
+}
+
+// JPEG 主解碼函式
+void JpegDecodeLittleFS(const String &path) {
+  Serial.println("DecodeJPEG...");
+  
+  // 確保 RGB 畫布已分配
+  if (!png_rgb_canvas) {
+    png_rgb_canvas = (uint8_t *)ps_malloc(EPD_WIDTH * EPD_HEIGHT * 3);
+    if (!png_rgb_canvas) {
+      Serial.println("無法分配 RGB 畫布記憶體！");
+      return;
+    }
+  }
+  memset(png_rgb_canvas, 255, EPD_WIDTH * EPD_HEIGHT * 3); // 預設白色背景
+  
+  if (jpeg.open(path.c_str(), jpegOpen, jpegClose, jpegRead, jpegSeek, jpegDrawCallback)) {
+    int imgWidth = jpeg.getWidth();
+    int imgHeight = jpeg.getHeight();
+    Serial.printf("JPEG 圖片: %d x %d\n", imgWidth, imgHeight);
+    Serial.printf("EPD 尺寸: %d x %d\n", EPD_WIDTH, EPD_HEIGHT);
+    Serial.printf("可用記憶體: Heap=%d, PSRAM=%d\n", ESP.getFreeHeap(), ESP.getFreePsram());
+    
+    // 檢查圖片尺寸是否超過 EPD
+    if (imgWidth > EPD_WIDTH * 2 || imgHeight > EPD_HEIGHT * 2) {
+      Serial.println("警告: 圖片太大，即使縮放 1/2 也無法完全顯示！");
+      Serial.println("建議使用 400x600 或更小的圖片。");
+    } else if (imgWidth > EPD_WIDTH || imgHeight > EPD_HEIGHT) {
+      Serial.println("注意: 圖片尺寸超過 EPD，將只顯示左上角部分。");
+      Serial.println("建議使用 400x600 的圖片以獲得最佳效果。");
+    }
+    
+    unsigned long startTime = millis();
+    
+    // 嘗試解碼（可選：使用縮放）
+    // 縮放選項：0=原始, JPEG_SCALE_HALF, JPEG_SCALE_QUARTER, JPEG_SCALE_EIGHTH
+    int options = 0;
+    
+    // 如果圖片寬或高是 EPD 的 2 倍以上，使用 1/2 縮放
+    if (imgWidth >= EPD_WIDTH * 2 || imgHeight >= EPD_HEIGHT * 2) {
+      options = JPEG_SCALE_HALF;
+      Serial.println("使用 1/2 縮放解碼...");
+    }
+    
+    Serial.println("開始解碼...");
+    if (jpeg.decode(0, 0, options)) {
+      Serial.printf("JPEG 解碼成功！耗時 %lu ms\n", millis() - startTime);
+      
+      // 執行抖動演算法
+      Serial.println("執行抖動處理...");
+      dither(png_rgb_canvas, EPD_WIDTH, EPD_HEIGHT);
+      
+      // 將 RGB 轉換為 EPD 格式
+      packedPixelCount = 0;
+      pixelPairIndex = 0;
+      const size_t pxCount = (size_t)EPD_WIDTH * EPD_HEIGHT;
+      
+      for (size_t i = 0; i < pxCount; ++i) {
+        uint8_t r = png_rgb_canvas[i * 3 + 0];
+        uint8_t g = png_rgb_canvas[i * 3 + 1];
+        uint8_t b = png_rgb_canvas[i * 3 + 2];
+
+        uint8_t code;
+        if (r == 255 && g == 255 && b == 255) code = EPD_4IN0E_WHITE;
+        else if (r == 0 && g == 0 && b == 0) code = EPD_4IN0E_BLACK;
+        else if (r == 255 && g == 255 && b == 0) code = EPD_4IN0E_YELLOW;
+        else if (r == 255 && g == 0 && b == 0) code = EPD_4IN0E_RED;
+        else if (r == 0 && g == 0 && b == 255) code = EPD_4IN0E_BLUE;
+        else if (r == 0 && g == 255 && b == 0) code = EPD_4IN0E_GREEN;
+        else code = EPD_4IN0E_BLACK;
+
+        if (pixelPairIndex == 0) firstPixelColorCode = code;
+        else secondPixelColorCode = code;
+
+        pixelPairIndex++;
+
+        if (pixelPairIndex == 2) {
+          if (packedPixelCount < pxCount / 2) {
+            epd_bitmap_canvas[packedPixelCount] = (firstPixelColorCode << 4) | (secondPixelColorCode & 0x0F);
+          }
+          pixelPairIndex = 0;
+          packedPixelCount++;
+        }
+      }
+      Serial.println("JPEG 處理完成！");
+    } else {
+      Serial.println("JPEG 解碼失敗！");
+      Serial.printf("錯誤代碼: %d\n", jpeg.getLastError());
+      Serial.println("可能原因：");
+      Serial.println("  1. 圖片格式不支援");
+      Serial.println("  2. 圖片損壞");
+      Serial.println("  3. 記憶體不足");
+      Serial.println("建議：使用標準基線式 JPEG 格式，尺寸 400x600");
+    }
+    jpeg.close();
+  } else {
+    Serial.println("無法開啟 JPEG 檔案！");
+    Serial.println("請確認檔案存在且格式正確。");
+  }
+}
+//------------------------ 下載圖片函式 ------------------------------//
+// 功能：從指定的 URL 下載圖片，並存到 LittleFS (ESP32 的快閃檔案系統)
+// 使用與 example 相同的簡單方法：http.begin(_url) + http.writeToStream(&file)
+void download_PNG_Url(String _url, String _target) {
+  Serial.println("開始下載圖片...");
+  Serial.println("URL: " + _url);
+
+  // 檢查 WiFi 連線狀態
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("錯誤: WiFi 未連線！");
+    return;
+  }
+
+  const int maxRetries = 3;
+  int retryCount = 0;
+  bool downloadSuccess = false;
+  bool writeSuccess = false;
 
   // ------------------ 主下載重試迴圈 ------------------ //
   while (retryCount < maxRetries) {
-    HTTPClient http;           // 建立一個 HTTPClient 物件
-    http.begin(_url);          // 設定要下載的網址
-    int httpCode = http.GET(); // 發送 GET 請求
-    // LED(1, 32, 255, BRIGHTNESS); // LED 顯示「正在下載」
+    HTTPClient http;
+    
+    // ========== 關鍵修正 ==========
+    // 直接使用 http.begin(_url)，與 example 版本完全一致
+    // 這樣 HTTPClient 會自己處理 HTTPS 連線
+    http.begin(_url);
+    http.setTimeout(30000); // 30 秒逾時
+    
+    Serial.println("發送 GET 請求...");
+    int httpCode = http.GET();
+    
+    Serial.printf("HTTP 回應碼: %d\n", httpCode);
 
-    // 如果 HTTP 回應碼 = 200 (OK)
     if (httpCode == HTTP_CODE_OK) {
       Serial.println("下載成功，開始寫入 LittleFS...");
-      downloadSuccess = true; // 標記下載成功
+      downloadSuccess = true;
 
-      // 如果目標檔案已經存在，就刪掉它
+      // 刪除舊檔案
       if (LittleFS.exists(_target)) {
         if (LittleFS.remove(_target)) {
           Serial.println("舊檔案已成功刪除");
         } else {
-          Serial.println("舊檔案刪除失敗，可能是權限問題");
+          Serial.println("舊檔案刪除失敗");
         }
       }
 
-      // ------------------ 檔案寫入重試迴圈 ------------------ //
+      // ------------------ 檔案寫入 ------------------ //
       int writeRetryCount = 0;
       while (writeRetryCount < maxRetries) {
         Serial.println("嘗試寫入檔案：" + _target);
-        File file = LittleFS.open(_target, FILE_WRITE); // 開啟檔案（寫入模式）
+        File file = LittleFS.open(_target, FILE_WRITE);
         if (!file) {
           Serial.println("無法開啟檔案進行寫入...");
           writeRetryCount++;
-          delay(100); // 等待一下再重試
-          continue;   // 跳回重試
+          delay(100);
+          continue;
         }
 
-        // 嘗試把下載的內容寫入檔案
-        if (http.writeToStream(&file) > 0) {
+        // 使用 writeToStream 直接寫入（與 example 一致的方式）
+        int writtenBytes = http.writeToStream(&file);
+        
+        if (writtenBytes > 0) {
           Serial.println("檔案寫入成功");
-          Serial.printf("檔案大小: %d 字節\n", file.size()); // 印出檔案大小
-          writeSuccess = true;
-          file.close(); // 關閉檔案
-          break;        // 成功 → 跳出寫入重試迴圈
+          Serial.printf("寫入大小: %d 字節\n", writtenBytes);
+          file.close();
+          
+          // 驗證檔案大小
+          File verifyFile = LittleFS.open(_target, FILE_READ);
+          if (verifyFile) {
+            Serial.printf("驗證檔案大小: %d 字節\n", verifyFile.size());
+            if (verifyFile.size() > 0) {
+              writeSuccess = true;
+            }
+            verifyFile.close();
+          }
+          break;
         } else {
           Serial.println("檔案寫入失敗，重試中...");
           file.close();
@@ -353,38 +534,41 @@ void download_PNG_Url(String _url, String _target) {
         }
       }
 
-      // 如果寫入成功 → LED 提示，並跳出整個下載重試迴圈
       if (writeSuccess) {
-        // LED(1, 96, 255, BRIGHTNESS); // LED 換顏色，表示「檔案寫入成功」
+        http.end();
         break;
       }
     } else {
-      // 如果 HTTP 回應不是 200，表示下載失敗
-      Serial.printf("下載 PNG 失敗, HTTP 代碼: %d\n", httpCode);
+      Serial.printf("下載失敗, HTTP 代碼: %d\n", httpCode);
+      if (httpCode < 0) {
+        Serial.println("可能原因：網路問題或 SSL 連線失敗");
+      }
     }
-
-    // 紀錄重試次數
+    
+    http.end();
     retryCount++;
     Serial.printf("重試次數: %d/%d\n", retryCount, maxRetries);
-    delay(100); // 等待一下再重試
-    http.end(); // 關閉 http 連線
+    delay(1000);
   }
 
   // ------------------ 結果檢查 ------------------ //
   if (!downloadSuccess) {
-    Serial.println("下載 PNG 失敗，請檢查網路或 URL 是否正確！");
+    Serial.println("下載失敗，請檢查網路或 URL！");
   } else if (!writeSuccess) {
-    Serial.println("檔案寫入失敗，請檢查 LittleFS 空間或權限！");
+    Serial.println("檔案寫入失敗，請檢查 LittleFS 空間！");
+  } else {
+    Serial.println("圖片下載並儲存成功！");
   }
 
-  // 最後關掉 LED
-  // LED(1, 0, 0, 0);
   delay(100);
 }
 //--------------------------------------------
 // 儲存陣列到檔案
 // 功能：把 epd_bitmap_canvas 的內容分段寫入 LittleFS
 void SaveArray(String _pngid) {
+  Serial.println("SaveArray 開始執行，目標檔案: " + _pngid);
+  Serial.flush();
+  
   // 開啟檔案（寫入模式）
   File file = LittleFS.open(_pngid, FILE_WRITE);
   if (!file) {
@@ -399,12 +583,17 @@ void SaveArray(String _pngid) {
     return;
   }
 
-  const size_t chunkSize = 1024; // 每次寫入 1024 位元組
-  size_t totalBytesWritten = 0;  // 總共寫入的位元組數
+  size_t totalSize = sizeof(epd_bitmap_canvas);
+  Serial.printf("準備寫入 %d 位元組...\n", totalSize);
+  Serial.flush();
+  
+  // 使用較大的 chunk 以減少寫入次數
+  const size_t chunkSize = 4096; // 每次寫入 4KB
+  size_t totalBytesWritten = 0;
 
   // 分段寫入檔案
-  for (size_t i = 0; i < sizeof(epd_bitmap_canvas); i += chunkSize) {
-    size_t bytesToWrite = min(chunkSize, sizeof(epd_bitmap_canvas) - i);
+  for (size_t i = 0; i < totalSize; i += chunkSize) {
+    size_t bytesToWrite = min(chunkSize, totalSize - i);
     size_t bytesWritten = file.write(epd_bitmap_canvas + i, bytesToWrite);
 
     if (bytesWritten != bytesToWrite) {
@@ -413,17 +602,22 @@ void SaveArray(String _pngid) {
     }
 
     totalBytesWritten += bytesWritten;
+    
+    // 每次寫入後讓出 CPU
+    yield();
+    delay(1);
   }
 
   // 確認是否寫入完整
-  if (totalBytesWritten == sizeof(epd_bitmap_canvas)) {
+  if (totalBytesWritten == totalSize) {
     Serial.println("資料已全部成功寫入檔案，檔案大小：" + (String)file.size());
   } else {
     Serial.printf("寫入總共 %d 位元組，但預期應為 %d 位元組\n",
-                  totalBytesWritten, sizeof(epd_bitmap_canvas));
+                  totalBytesWritten, totalSize);
   }
 
-  file.close(); // 關閉檔案
+  file.close();
+  Serial.println("SaveArray 完成");
 }
 
 //--------------------------------------------
@@ -462,14 +656,28 @@ void GetArray(String _pngid) {
 }
 
 //------------------------ 顯示圖片函式 ------------------------------//
-void showImage(int slot) {
+bool showImage(int slot) {
   String filename = "/" + String(slot) + ".bin";
   Serial.println("Showing image from " + filename);
+  
+  // Check if file exists before trying to read it
+  if (!LittleFS.exists(filename)) {
+    Serial.println("Error: File " + filename + " does not exist!");
+    Serial.println("Please update the slot first using /api/update?slot=" + String(slot));
+    return false;
+  }
+  
   LED(slot - 1, 92, 255, BRIGHTNESS);
   GetArray(filename);
   LED(slot - 1, 192, 255, BRIGHTNESS);
+  
+  Serial.println("正在刷新電子紙顯示器...");
+  unsigned long startTime = millis();
   EPD_4IN0E_Display(epd_bitmap_canvas);
+  Serial.printf("電子紙刷新完成！耗時 %lu ms\n", millis() - startTime);
+  
   LED(slot - 1, 64, 255, BRIGHTNESS);
+  return true;
 }
 
 //------------------------ 更新圖片函式 ------------------------------//
@@ -486,48 +694,40 @@ void updateImage(int slot) {
 
   Serial.println("Updating slot " + String(slot));
   LED(slot - 1, 160, 255, BRIGHTNESS);
-  download_PNG_Url(String(CLOUD_BASE_URL) + filename, "/temp.png");
+  
+  // 判斷副檔名來決定下載的暫存檔名和解碼方式
+  String lowerFilename = filename;
+  lowerFilename.toLowerCase();
+  bool isJpeg = lowerFilename.endsWith(".jpg") || lowerFilename.endsWith(".jpeg");
+  String tempFile = isJpeg ? "/temp.jpg" : "/temp.png";
+  
+  download_PNG_Url(String(CLOUD_BASE_URL) + filename, tempFile);
   LED(slot - 1, 192, 255, BRIGHTNESS);
-  PngDecodeLittleFS("/temp.png");
-  SaveArray("/" + String(slot) + ".bin");
+  
+  // 根據格式選擇解碼器
+  if (isJpeg) {
+    Serial.println("使用 JPEG 解碼器...");
+    JpegDecodeLittleFS(tempFile);
+  } else {
+    Serial.println("使用 PNG 解碼器...");
+    PngDecodeLittleFS(tempFile);
+  }
+  
+  Serial.println("解碼完成，直接顯示圖片...");
   LED(slot - 1, 64, 255, BRIGHTNESS);
-
-  showImage(slot);
+  
+  // 先直接顯示已解碼的資料（不需要從檔案讀取）
+  Serial.println("正在刷新電子紙顯示器...");
+  unsigned long startTime = millis();
+  EPD_4IN0E_Display(epd_bitmap_canvas);
+  Serial.printf("電子紙刷新完成！耗時 %lu ms\n", millis() - startTime);
+  
+  // 顯示完成後，嘗試儲存到檔案（供下次快速讀取）
+  Serial.println("準備儲存陣列到檔案...");
+  SaveArray("/" + String(slot) + ".bin");
+  Serial.println("updateImage 完成！");
 }
 
-//------------------------ WebSocket & WebServer
-//------------------------------//
-AsyncWebServer server(80);
-AsyncWebSocket ws("/ws");
-
-const char index_html[] PROGMEM = R"rawliteral(
-<!DOCTYPE HTML><html>
-<head>
-  <title>E-Paper Control</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <style>
-  body { font-family: Arial; text-align: center; margin:0px auto; padding-top: 30px; background-color: #f4f4f4; }
-  .container { max-width: 600px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-  button { padding: 15px 30px; font-size: 18px; margin: 10px; cursor: pointer; border: none; border-radius: 5px; color: white; width: 100%; max-width: 300px; }
-  .btn-1 { background-color: #e74c3c; }
-  .btn-2 { background-color: #2ecc71; }
-  .btn-3 { background-color: #3498db; }
-  .btn-update { background-color: #f39c12; }
-  h1 { color: #333; }
-  #status { font-weight: bold; color: #666; }
-  </style>
-</head>
-<body>
-<div class="container">
-  <h1>E-Paper Workshop</h1>
-  <p>Status: <span id="status">Connecting...</span></p>
-  <p><button class="btn-1" onclick="send('1')">Show Cat (Slot 1)</button></p>
-  <p><button class="btn-2" onclick="send('2')">Show Dog (Slot 2)</button></p>
-  <p><button class="btn-3" onclick="send('3')">Show Others (Slot 3)</button></p>
-  <hr>
-  <p><button class="btn-update" onclick="send('update1')">Update Slot 1 & Show</button></p>
-</div>
-<script>
 //------------------------ WebServer (REST API) ------------------------------//
 AsyncWebServer server(80);
 
@@ -616,6 +816,12 @@ void setup() {
 
   if (MDNS.begin("epaper")) {
     Serial.println("MDNS responder started");
+    Serial.println("You can access this device at: http://epaper.local");
+    // 廣播 HTTP 服務
+    MDNS.addService("http", "tcp", 80);
+  } else {
+    Serial.println("Error setting up MDNS responder!");
+    Serial.println("Please use IP address instead: http://" + WiFi.localIP().toString());
   }
 
   // Init REST API Endpoints
@@ -626,8 +832,12 @@ void setup() {
     if (request->hasParam("slot")) {
       int slot = request->getParam("slot")->value().toInt();
       if (slot >= 1 && slot <= 3) {
-        showImage(slot);
-        request->send(200, "text/plain", "OK");
+        bool success = showImage(slot);
+        if (success) {
+          request->send(200, "text/plain", "OK");
+        } else {
+          request->send(404, "text/plain", "Image file not found. Please update slot first.");
+        }
       } else {
         request->send(400, "text/plain", "Invalid Slot");
       }
@@ -686,19 +896,19 @@ void setup() {
   LED(1, 32, 255, BRIGHTNESS); // LED 2 顯示顏色 → 表示「成功啟動檔案系統」
   LED(2, 32, 255, BRIGHTNESS); // LED 2 顯示顏色 → 表示「成功啟動檔案系統」
 
-  Serial.println("Formatting LittleFS...");
-  if (LittleFS.format()) // 格式化檔案系統，清空檔案
-  {
-    Serial.println("LittleFS formatted successfully!");
-    LED(0, 64, 255, BRIGHTNESS); // LED 2 顯示顏色 → 表示「成功啟動檔案系統」
-    LED(1, 64, 255, BRIGHTNESS); // LED 2 顯示顏色 → 表示「成功啟動檔案系統」
-    LED(2, 64, 255, BRIGHTNESS); // LED 2 顯示顏色 → 表示「成功啟動檔案系統」
-  } else {
-    Serial.println("LittleFS format failed!");
-    LED(0, 0, 255, BRIGHTNESS); // LED 2 亮起另一個顏色，表示「檔案系統失敗」
-    LED(1, 0, 255, BRIGHTNESS); // LED 2 亮起另一個顏色，表示「檔案系統失敗」
-    LED(2, 0, 255, BRIGHTNESS); // LED 2 亮起另一個顏色，表示「檔案系統失敗」
-  }
+  // Serial.println("Formatting LittleFS...");
+  // if (LittleFS.format()) // 格式化檔案系統，清空檔案
+  // {
+  //   Serial.println("LittleFS formatted successfully!");
+  //   LED(0, 64, 255, BRIGHTNESS); // LED 2 顯示顏色 → 表示「成功啟動檔案系統」
+  //   LED(1, 64, 255, BRIGHTNESS); // LED 2 顯示顏色 → 表示「成功啟動檔案系統」
+  //   LED(2, 64, 255, BRIGHTNESS); // LED 2 顯示顏色 → 表示「成功啟動檔案系統」
+  // } else {
+  //   Serial.println("LittleFS format failed!");
+  //   LED(0, 0, 255, BRIGHTNESS); // LED 2 亮起另一個顏色，表示「檔案系統失敗」
+  //   LED(1, 0, 255, BRIGHTNESS); // LED 2 亮起另一個顏色，表示「檔案系統失敗」
+  //   LED(2, 0, 255, BRIGHTNESS); // LED 2 亮起另一個顏色，表示「檔案系統失敗」
+  // }
 
   // 在 PSRAM 分配一塊 RGB 畫布，大小 = 寬 * 高 * 3 bytes (R,G,B)
   png_rgb_canvas = (uint8_t *)ps_malloc(EPD_4IN0E_WIDTH * EPD_4IN0E_HEIGHT * 3);
@@ -742,38 +952,56 @@ void setup() {
   LED(1, 128, 255, BRIGHTNESS);     // LED 換顏色 → 表示「電子紙初始化完成」
   LED(2, 128, 255, BRIGHTNESS);     // LED 換顏色 → 表示「電子紙初始化完成」
 
-  LED(0, 160, 255, BRIGHTNESS); // LED 換顏色 → 表示「開始下載」
-  download_PNG_Url(String(CLOUD_BASE_URL) + SLOT1_FILENAME, "/temp.png");
-  LED(0, 192, 255, BRIGHTNESS);   // LED 換顏色 → 表示「下載完成」
-  PngDecodeLittleFS("/temp.png"); // 從 LittleFS 中讀取並解碼一張 PNG 圖片
+  // 自動下載功能已停用 - 改用 API 或按鈕手動觸發下載
+  // 如需在開機時自動下載，請取消以下註解：
+  
+  /*
+  // 輔助函式：根據副檔名選擇解碼器
+  auto decodeImage = [](const char* filename, const String& tempFile) {
+    String lowerFilename = String(filename);
+    lowerFilename.toLowerCase();
+    if (lowerFilename.endsWith(".jpg") || lowerFilename.endsWith(".jpeg")) {
+      JpegDecodeLittleFS(tempFile);
+    } else {
+      PngDecodeLittleFS(tempFile);
+    }
+  };
+
+  // 下載 Slot 1
+  LED(0, 160, 255, BRIGHTNESS);
+  String slot1Lower = String(SLOT1_FILENAME); slot1Lower.toLowerCase();
+  String tempFile1 = (slot1Lower.endsWith(".jpg") || slot1Lower.endsWith(".jpeg")) ? "/temp.jpg" : "/temp.png";
+  download_PNG_Url(String(CLOUD_BASE_URL) + SLOT1_FILENAME, tempFile1);
+  LED(0, 192, 255, BRIGHTNESS);
+  decodeImage(SLOT1_FILENAME, tempFile1);
   SaveArray("/1.bin");
-  LED(0, 64, 255, BRIGHTNESS); // LED 換顏色 → 表示「讀取、解碼、儲存完成」
+  LED(0, 64, 255, BRIGHTNESS);
 
-  // 這裡可以優化，使用 updateImage 但 setup
-  // 邏輯稍微有點不同(它是逐個下載)，先保持原狀或簡化 為了保持 setup
-  // 流程視覺反饋一致，這裡暫時保留原樣，或者也可以改成調用 updateImage? 考慮到
-  // updateImage 會直接 Show，這裡原本的 setup 只有下載解碼 Save，沒有 Show。
-  // 所以保持原樣比較好。
-
-  LED(1, 160, 255, BRIGHTNESS); // LED 換顏色 → 表示「開始下載」
-  download_PNG_Url(String(CLOUD_BASE_URL) + SLOT2_FILENAME, "/temp.png");
-  LED(1, 192, 255, BRIGHTNESS);   // LED 換顏色 → 表示「下載完成」
-  PngDecodeLittleFS("/temp.png"); // 從 LittleFS 中讀取並解碼一張 PNG 圖片
+  // 下載 Slot 2
+  LED(1, 160, 255, BRIGHTNESS);
+  String slot2Lower = String(SLOT2_FILENAME); slot2Lower.toLowerCase();
+  String tempFile2 = (slot2Lower.endsWith(".jpg") || slot2Lower.endsWith(".jpeg")) ? "/temp.jpg" : "/temp.png";
+  download_PNG_Url(String(CLOUD_BASE_URL) + SLOT2_FILENAME, tempFile2);
+  LED(1, 192, 255, BRIGHTNESS);
+  decodeImage(SLOT2_FILENAME, tempFile2);
   SaveArray("/2.bin");
-  LED(1, 64, 255, BRIGHTNESS); // LED 換顏色 → 表示「讀取、解碼、儲存完成」
+  LED(1, 64, 255, BRIGHTNESS);
 
-  LED(2, 160, 255, BRIGHTNESS); // LED 換顏色 → 表示「開始下載」
-  download_PNG_Url(String(CLOUD_BASE_URL) + SLOT3_FILENAME, "/temp.png");
-  LED(2, 192, 255, BRIGHTNESS);   // LED 換顏色 → 表示「下載完成」
-  PngDecodeLittleFS("/temp.png"); // 從 LittleFS 中讀取並解碼一張 PNG 圖片
+  // 下載 Slot 3
+  LED(2, 160, 255, BRIGHTNESS);
+  String slot3Lower = String(SLOT3_FILENAME); slot3Lower.toLowerCase();
+  String tempFile3 = (slot3Lower.endsWith(".jpg") || slot3Lower.endsWith(".jpeg")) ? "/temp.jpg" : "/temp.png";
+  download_PNG_Url(String(CLOUD_BASE_URL) + SLOT3_FILENAME, tempFile3);
+  LED(2, 192, 255, BRIGHTNESS);
+  decodeImage(SLOT3_FILENAME, tempFile3);
   SaveArray("/3.bin");
-  LED(2, 64, 255, BRIGHTNESS); // LED 換顏色 → 表示「讀取、解碼、儲存完成」
-
-  // PngDecodeLittleFS("/test.png"); // 從 LittleFS 中讀取並解碼一張 PNG 圖片
-  // LED(2, 192, 255, BRIGHTNESS); // LED 換顏色 → 表示「PNG 解碼完成」
-  // EPD_4IN0E_Display(epd_bitmap_canvas); // 把轉換好的圖像資料送到電子紙顯示
-  // LED(2, 64, 255, BRIGHTNESS);          // LED 顯示另一個顏色 →
-  // 表示「顯示完成」
+  LED(2, 64, 255, BRIGHTNESS);
+  */
+  
+  Serial.println("Setup 完成！");
+  Serial.println("使用 API 或按鈕來下載和顯示圖片：");
+  Serial.println("  - API: http://10.85.182.1/api/update?slot=1");
+  Serial.println("  - 按鈕: 短按顯示，長按 3 秒更新");
 }
 
 // ------------------ 主循環 ------------------
@@ -783,8 +1011,11 @@ void loop() {
   bool Btn1Value = digitalRead(btn1Pin);
   bool Btn2Value = digitalRead(btn2Pin);
   bool Btn3Value = digitalRead(btn3Pin);
-  Serial.println((String)Btn1Value + "/" + (String)Btn2Value + "/" +
-                 (String)Btn3Value);
+  // Serial.println((String)Btn1Value + "/" + (String)Btn2Value + "/" +
+                //  (String)Btn3Value);
+  
+  // ESP32 的 mDNS 會自動在背景運行，不需要手動 update
+  
   // ------------------ 按鈕1處理（含長按偵測）------------------
   // 如果「這次讀到的狀態」和「上一次不同」
   if (Btn1Value != lastBtn1State) {
