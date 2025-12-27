@@ -32,6 +32,11 @@ class DiscoveryService {
       _discovery = await nsd.startDiscovery('_http._tcp');
 
       _discovery!.addServiceListener((service, status) {
+        // ignore: avoid_print
+        print(
+          'mDNS service ${status.name}: ${service.name} (${service.host}:${service.port})',
+        );
+
         if (status == nsd.ServiceStatus.found) {
           // Check if this is our E-Paper device
           final name = service.name?.toLowerCase() ?? '';
@@ -101,7 +106,7 @@ class DiscoveryService {
   ///
   /// Returns the found URL or null if not found within timeout
   Future<String?> discoverDevice({
-    Duration timeout = const Duration(seconds: 5),
+    Duration timeout = const Duration(seconds: 10),
   }) async {
     await startDiscoveryProcess();
 
