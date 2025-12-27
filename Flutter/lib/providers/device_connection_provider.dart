@@ -1,7 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../widgets/lego_status_chip.dart';
 import '../services/arduino_service.dart';
-import '../config.dart';
 
 /// State for device connection
 class DeviceConnectionState {
@@ -45,7 +44,7 @@ class DeviceConnectionNotifier extends StateNotifier<DeviceConnectionState> {
       if (isConnected) {
         state = state.copyWith(
           status: ConnectionStatus.connected,
-          deviceUrl: AppConfig.arduinoBaseUrl,
+          deviceUrl: _arduinoService.currentUrl,
           errorMessage: null,
         );
       } else {

@@ -21,6 +21,13 @@ dependencies:
   
   # Google Fonts for LEGO-style typography
   google_fonts: ^6.2.1
+  
+  # Image Processing
+  image: ^4.5.3
+  
+  # Path utilities
+  path_provider: ^2.1.5
+  path: ^1.9.1
 
 dev_dependencies:
   flutter_test:

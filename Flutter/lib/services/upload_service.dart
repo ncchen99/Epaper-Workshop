@@ -1,118 +1,128 @@
 import 'dart:io';
-import 'package:dio/dio.dart';
 import '../config.dart';
+import 'image_processor_service.dart';
+import 'arduino_service.dart';
 
 /// Result of an upload operation
 class UploadResult {
   final bool success;
-  final String? imageUrl;
+  final String? message;
   final String? error;
+  final int? processedWidth;
+  final int? processedHeight;
 
-  const UploadResult({required this.success, this.imageUrl, this.error});
+  const UploadResult({
+    required this.success,
+    this.message,
+    this.error,
+    this.processedWidth,
+    this.processedHeight,
+  });
 
-  factory UploadResult.ok(String imageUrl) =>
-      UploadResult(success: true, imageUrl: imageUrl);
+  factory UploadResult.ok(
+    String message, {
+    int? processedWidth,
+    int? processedHeight,
+  }) => UploadResult(
+    success: true,
+    message: message,
+    processedWidth: processedWidth,
+    processedHeight: processedHeight,
+  );
 
   factory UploadResult.failure(String error) =>
       UploadResult(success: false, error: error);
 }
 
-/// Service for uploading images to Cloudflare R2.
+/// Service for uploading images directly to Arduino E-Paper device.
 ///
-/// In mock mode, simulates the upload and returns a fake URL.
-/// In real mode, uploads to R2 (requires backend or direct R2 API implementation).
+/// This service:
+/// 1. Processes images to fit E-Paper requirements (400x600, JPEG)
+/// 2. Uploads directly to Arduino via HTTP POST (no cloud storage needed)
 class UploadService {
-  late final Dio _dio;
-
-  UploadService() {
-    _dio = Dio(
-      BaseOptions(
-        connectTimeout: Duration(milliseconds: AppConfig.connectionTimeout),
-        receiveTimeout: Duration(milliseconds: AppConfig.requestTimeout),
-      ),
-    );
-  }
+  final ImageProcessorService _imageProcessor = ImageProcessorService();
+  final ArduinoService _arduinoService = ArduinoService();
 
   /// Upload an image file for a specific slot.
   ///
   /// [image] - The image file to upload
   /// [slot] - The slot number (1, 2, or 3) determines the filename
   ///
-  /// Returns the public URL of the uploaded image.
+  /// The image will be:
+  /// 1. Rotated if landscape (wider than tall)
+  /// 2. Resized to fit 400x600
+  /// 3. Center-cropped to exactly 400x600
+  /// 4. Compressed as JPEG baseline format
+  /// 5. Uploaded directly to Arduino
+  ///
+  /// Returns the result with success/failure status.
   Future<UploadResult> uploadImage(File image, int slot) async {
     if (slot < 1 || slot > 3) {
       return UploadResult.failure('Invalid slot: $slot. Must be 1, 2, or 3.');
     }
 
-    final filename = AppConfig.slotFilenames[slot - 1];
-
     if (AppConfig.mockMode) {
       // Simulate upload delay
-      await Future.delayed(const Duration(milliseconds: 1000));
-
-      // Return mock URL
-      final mockUrl = '${AppConfig.r2PublicUrl}/$filename';
-      return UploadResult.ok(mockUrl);
+      await Future.delayed(const Duration(milliseconds: 1500));
+      return UploadResult.ok(
+        'Mock: Image uploaded to slot $slot',
+        processedWidth: AppConfig.targetWidth,
+        processedHeight: AppConfig.targetHeight,
+      );
     }
 
-    // Real R2 upload implementation
-    // Note: This requires either:
-    // 1. A backend server that handles the R2 upload
-    // 2. Direct R2 API integration with signed URLs
-
     try {
-      if (AppConfig.r2UploadEndpoint.isEmpty) {
+      // Step 1: Process the image to E-Paper specifications
+      final processResult = await _imageProcessor.processImage(image);
+      if (!processResult.success || processResult.processedFile == null) {
         return UploadResult.failure(
-          'R2 upload endpoint not configured. '
-          'Please set r2UploadEndpoint in config.dart or use mock mode.',
+          processResult.error ?? 'Image processing failed',
         );
       }
 
-      // Prepare multipart form data
-      final formData = FormData.fromMap({
-        'file': await MultipartFile.fromFile(image.path, filename: filename),
-        'slot': slot,
-      });
+      final processedFile = processResult.processedFile!;
 
-      // Upload to backend
-      final response = await _dio.post(
-        AppConfig.r2UploadEndpoint,
-        data: formData,
+      // Step 2: Check connection to Arduino (with fallback)
+      final connected = await _arduinoService.checkConnection();
+      if (!connected) {
+        return UploadResult.failure(
+          'Cannot connect to Arduino. Check WiFi and device power.',
+        );
+      }
+
+      // Step 3: Upload directly to Arduino
+      final uploadResult = await _arduinoService.uploadImage(
+        slot,
+        processedFile,
       );
 
-      if (response.statusCode == 200) {
-        final url = response.data['url'] as String?;
-        if (url != null) {
-          return UploadResult.ok(url);
-        }
-        return UploadResult.failure('No URL in response');
+      // Step 4: Clean up temporary processed file
+      try {
+        await processedFile.delete();
+      } catch (_) {}
+
+      if (uploadResult.success) {
+        return UploadResult.ok(
+          uploadResult.message ?? 'Image uploaded successfully',
+          processedWidth: processResult.finalWidth,
+          processedHeight: processResult.finalHeight,
+        );
       } else {
-        return UploadResult.failure('Upload failed: ${response.data}');
+        return UploadResult.failure(uploadResult.error ?? 'Upload failed');
       }
-    } on DioException catch (e) {
-      return UploadResult.failure(_handleDioError(e));
     } catch (e) {
       return UploadResult.failure('Upload error: $e');
     }
   }
 
-  /// Get the public URL for a slot's image
-  String getSlotImageUrl(int slot) {
-    if (slot < 1 || slot > 3) return '';
-    final filename = AppConfig.slotFilenames[slot - 1];
-    return '${AppConfig.r2PublicUrl}/$filename';
+  /// Process image only (for preview without upload)
+  Future<ImageProcessResult> processImageForPreview(File image) async {
+    return _imageProcessor.processImage(image);
   }
 
-  String _handleDioError(DioException e) {
-    switch (e.type) {
-      case DioExceptionType.connectionTimeout:
-        return 'Upload timeout. Check your internet connection.';
-      case DioExceptionType.receiveTimeout:
-        return 'Server response timeout.';
-      case DioExceptionType.connectionError:
-        return 'Cannot connect to upload server.';
-      default:
-        return e.message ?? 'Upload error occurred';
-    }
-  }
+  /// Get current Arduino connection URL
+  String getArduinoUrl() => _arduinoService.currentUrl;
+
+  /// Check if using fallback IP
+  bool isUsingFallbackIp() => _arduinoService.isUsingFallback;
 }

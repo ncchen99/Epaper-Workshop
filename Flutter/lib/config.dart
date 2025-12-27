@@ -10,40 +10,37 @@ class AppConfig {
 
   /// When true, uses mock services instead of real API calls.
   /// Set to false when ready to connect to real Arduino device.
-  static const bool mockMode = true;
+  static const bool mockMode = false;
 
   // ===========================================
   // Arduino Device Configuration
   // ===========================================
 
-  /// Arduino device base URL (mDNS)
-  static const String arduinoBaseUrl = 'http://epaper.local';
+  /// Primary: Arduino device mDNS hostname
+  /// Works on iOS and most networks
+  static const String arduinoMdnsUrl = 'http://epaper.local';
 
-  /// Alternative: Direct IP address (uncomment and modify if mDNS doesn't work)
-  // static const String arduinoBaseUrl = 'http://192.168.1.100';
+  /// Fallback: Direct IP address
+  /// Use this when mDNS doesn't work (common on Android)
+  static const String arduinoIpUrl = 'http://10.85.182.1';
 
   /// API endpoints
   static const String apiShow = '/api/show';
   static const String apiUpdate = '/api/update';
+  static const String apiUpload = '/api/upload'; // Direct upload to Arduino
 
   // ===========================================
-  // Cloudflare R2 Configuration
+  // Image Processing Configuration
   // ===========================================
 
-  /// R2 public base URL for downloading images
-  static const String r2PublicUrl =
-      'https://REMOVED_R2_PUBLIC_ID.r2.dev';
+  /// Target image width for E-Paper display
+  static const int targetWidth = 400;
 
-  /// R2 upload endpoint (for real mode - requires backend or direct R2 API)
-  /// Leave empty if using a backend server for uploads
-  static const String r2UploadEndpoint = '';
+  /// Target image height for E-Paper display
+  static const int targetHeight = 600;
 
-  /// Slot filenames on R2 (must match Arduino's SLOT*_FILENAME)
-  static const List<String> slotFilenames = [
-    'test.png', // Slot 1
-    'cat.png', // Slot 2
-    'dog.png', // Slot 3
-  ];
+  /// JPEG quality (0-100, lower = smaller file)
+  static const int jpegQuality = 85;
 
   // ===========================================
   // App Settings

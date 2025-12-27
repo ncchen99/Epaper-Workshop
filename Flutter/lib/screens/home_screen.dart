@@ -59,15 +59,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     setState(() => _isSending = true);
     ref.read(deviceConnectionProvider.notifier).setSending();
-    ref.read(logProvider.notifier).info('Sending to E-Paper...');
+    ref.read(logProvider.notifier).info('Preparing image...');
 
     try {
       final slot = selectedImage.slot ?? 1;
       final arduinoService = ref.read(arduinoServiceProvider);
 
-      // If it's an uploaded image, we need to upload first then update
+      // If it's an uploaded image, we need to process, upload, then update
       if (!selectedImage.isPreset && selectedImage.file != null) {
-        ref.read(logProvider.notifier).info('Uploading image to cloud...');
+        ref
+            .read(logProvider.notifier)
+            .info('Processing: rotate, resize, crop to 400x600...');
+        ref.read(logProvider.notifier).info('Uploading to cloud storage...');
+
         final uploadResult = await _uploadService.uploadImage(
           selectedImage.file!,
           slot,
@@ -77,15 +81,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           throw Exception(uploadResult.error);
         }
 
-        ref.read(logProvider.notifier).success('Upload complete!');
+        ref
+            .read(logProvider.notifier)
+            .success(
+              'Upload complete! Size: ${uploadResult.processedWidth}x${uploadResult.processedHeight}',
+            );
 
         // Now tell Arduino to update from cloud
+        ref
+            .read(logProvider.notifier)
+            .info('Sending update command to E-Paper...');
         final result = await arduinoService.updateImage(slot);
         if (!result.success) {
           throw Exception(result.error);
         }
       } else {
         // For preset images, just show the existing slot
+        ref.read(logProvider.notifier).info('Displaying slot $slot...');
         final result = await arduinoService.showImage(slot);
         if (!result.success) {
           throw Exception(result.error);
@@ -113,17 +125,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ? picker.ImageSource.camera
               : picker.ImageSource.gallery;
 
-      final pickedFile = await _imagePicker.pickImage(
-        source: pickerSource,
-        maxWidth: 800,
-        maxHeight: 600,
-        imageQuality: 85,
-      );
+      // Pick image without constraints - we'll process it ourselves
+      final pickedFile = await _imagePicker.pickImage(source: pickerSource);
 
       if (pickedFile != null) {
         final file = File(pickedFile.path);
+        ref.read(logProvider.notifier).info('Processing image...');
         ref.read(imageSelectionProvider.notifier).addUploadedImage(file);
-        ref.read(logProvider.notifier).success('Photo added!');
+        ref
+            .read(logProvider.notifier)
+            .success('Photo ready! Tap "Send" to upload.');
       }
     } catch (e) {
       ref.read(logProvider.notifier).error('Failed to pick image: $e');
