@@ -742,10 +742,12 @@ bool showImage(int slot) {
   EPD_4IN0E_Display(epd_bitmap_canvas);
   Serial.printf("電子紙刷新完成！耗時 %lu ms\n", millis() - startTime);
 
-  // ========== 刷新完成後重新啟動 Server ==========
-  startServer();
-
   LED(slot - 1, 64, 255, BRIGHTNESS);
+  Serial.println("刷新完成，0.5 秒後重啟 ESP32...");
+  delay(500); // 給一點時間讓 Serial 輸出
+  ESP.restart(); // 重啟 ESP32
+  
+  // 不會執行到這裡
   return true;
 }
 
@@ -801,10 +803,9 @@ void updateImage(int slot) {
   EPD_4IN0E_Display(epd_bitmap_canvas);
   Serial.printf("電子紙刷新完成！耗時 %lu ms\n", millis() - startTime);
 
-  // 重新啟動 Server
-  startServer();
-  
-  Serial.println("updateImage 完成！");
+  Serial.println("updateImage 完成！0.5 秒後重啟 ESP32...");
+  delay(500); // 給一點時間讓 Serial 輸出
+  ESP.restart(); // 重啟 ESP32
 }
 
 //------------------------ WebServer (REST API) ------------------------------//
@@ -1232,14 +1233,13 @@ void loop() {
     EPD_4IN0E_Display(epd_bitmap_canvas);
     Serial.printf("電子紙刷新完成！耗時 %lu ms\n", millis() - startTime);
     
-    // 重新啟動 Server
-    startServer();
-    
     // 清理暫存檔
     LittleFS.remove(tempPath);
     LED(slot - 1, 64, 255, BRIGHTNESS);
-    Serial.println("上傳處理完成！");
-    isProcessing = false; // 標記處理完成
+    
+    Serial.println("上傳處理完成！2 秒後重啟 ESP32...");
+    delay(2000); // 給一點時間讓 Serial 輸出
+    ESP.restart(); // 重啟 ESP32
   }
 
   // 讀取按鈕的當前狀態
