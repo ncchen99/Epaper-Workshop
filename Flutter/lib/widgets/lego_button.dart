@@ -132,13 +132,14 @@ class _LegoButtonState extends State<LegoButton>
         child: Container(
           width: widget.expanded ? double.infinity : null,
           padding: const EdgeInsets.symmetric(
-            horizontal: LegoSpacing.lg,
-            vertical: LegoSpacing.md,
+            horizontal: LegoSpacing.md,
+            vertical: LegoSpacing.sm + 2,
           ),
           decoration: BoxDecoration(
-            color: isDisabled
-                ? _backgroundColor.withValues(alpha: 0.5)
-                : _backgroundColor,
+            color:
+                isDisabled
+                    ? _backgroundColor.withValues(alpha: 0.5)
+                    : _backgroundColor,
             borderRadius: BorderRadius.circular(LegoSpacing.borderRadius),
             boxShadow: _isPressed ? LegoShadows.pressed : LegoShadows.raised,
             gradient: LinearGradient(
@@ -158,21 +159,28 @@ class _LegoButtonState extends State<LegoButton>
             children: [
               if (widget.isLoading) ...[
                 SizedBox(
-                  width: 20,
-                  height: 20,
+                  width: 18,
+                  height: 18,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
                     valueColor: AlwaysStoppedAnimation(_textColor),
                   ),
                 ),
-                const SizedBox(width: LegoSpacing.sm),
+                const SizedBox(width: LegoSpacing.xs),
               ] else if (widget.icon != null) ...[
-                Icon(widget.icon, color: _textColor, size: 20),
-                const SizedBox(width: LegoSpacing.sm),
+                Icon(widget.icon, color: _textColor, size: 18),
+                const SizedBox(width: LegoSpacing.xs),
               ],
-              Text(
-                widget.label,
-                style: LegoTypography.labelLarge.copyWith(color: _textColor),
+              Flexible(
+                child: Text(
+                  widget.label,
+                  style: LegoTypography.labelLarge.copyWith(
+                    color: _textColor,
+                    fontSize: 13,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
               ),
             ],
           ),

@@ -30,53 +30,54 @@ class LegoCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       margin: margin ?? const EdgeInsets.all(LegoSpacing.sm),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Studs on top
-          if (showStuds)
-            SizedBox(
-              height: LegoSpacing.studDiameter + LegoSpacing.xs,
-              child: CustomPaint(
-                size: Size(double.infinity, LegoSpacing.studDiameter),
-                painter: LegoStudPainter(
-                  baseColor: color,
-                  studCount: studCount,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(LegoSpacing.borderRadius),
+        boxShadow: LegoShadows.raised,
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [_lighten(color, 0.1), color, _darken(color, 0.05)],
+          stops: const [0.0, 0.3, 1.0],
+        ),
+      ),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(LegoSpacing.borderRadius),
+          // Plastic highlight on top edge
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.center,
+            colors: [Colors.white.withValues(alpha: 0.15), Colors.transparent],
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Studs inside the card at the top
+            if (showStuds)
+              Container(
+                padding: const EdgeInsets.only(top: LegoSpacing.md),
+                child: SizedBox(
+                  height: LegoSpacing.studDiameter,
+                  child: CustomPaint(
+                    size: Size(double.infinity, LegoSpacing.studDiameter),
+                    painter: LegoStudPainter(
+                      baseColor: _darken(color, 0.05),
+                      studCount: studCount,
+                    ),
+                  ),
                 ),
               ),
-            ),
 
-          // Main card body
-          Container(
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(LegoSpacing.borderRadius),
-              boxShadow: LegoShadows.raised,
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [_lighten(color, 0.1), color, _darken(color, 0.05)],
-                stops: const [0.0, 0.3, 1.0],
-              ),
-            ),
-            child: Container(
+            // Main content with padding
+            Container(
               padding: padding ?? const EdgeInsets.all(LegoSpacing.md),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(LegoSpacing.borderRadius),
-                // Plastic highlight on top edge
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.center,
-                  colors: [
-                    Colors.white.withValues(alpha: 0.15),
-                    Colors.transparent,
-                  ],
-                ),
-              ),
               child: child,
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

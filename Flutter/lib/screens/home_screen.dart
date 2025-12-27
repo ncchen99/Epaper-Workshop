@@ -108,9 +108,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (source == null) return;
 
     try {
-      final pickerSource = source == ImageSource.camera
-          ? picker.ImageSource.camera
-          : picker.ImageSource.gallery;
+      final pickerSource =
+          source == ImageSource.camera
+              ? picker.ImageSource.camera
+              : picker.ImageSource.gallery;
 
       final pickedFile = await _imagePicker.pickImage(
         source: pickerSource,
@@ -184,7 +185,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             'Select Image',
             style: LegoTypography.titleMedium.copyWith(color: LegoColors.black),
           ),
-          const SizedBox(height: LegoSpacing.md),
+          const SizedBox(height: LegoSpacing.sm),
 
           // Grid of images
           GridView.builder(
@@ -192,9 +193,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             physics: const NeverScrollableScrollPhysics(),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
-              crossAxisSpacing: LegoSpacing.md,
-              mainAxisSpacing: LegoSpacing.md,
-              childAspectRatio: 4 / 3.5,
+              crossAxisSpacing: LegoSpacing.sm,
+              mainAxisSpacing: LegoSpacing.sm,
+              childAspectRatio: 1.0,
             ),
             itemCount: imageState.availableImages.length,
             itemBuilder: (context, index) {
@@ -202,9 +203,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               final isSelected = imageState.selectedIndex == index;
 
               return LegoImageTile(
-                image: image.isPreset
-                    ? AssetImage(image.assetPath)
-                    : FileImage(image.file!) as ImageProvider,
+                image:
+                    image.isPreset
+                        ? AssetImage(image.assetPath)
+                        : FileImage(image.file!) as ImageProvider,
                 isSelected: isSelected,
                 onTap: () {
                   ref.read(imageSelectionProvider.notifier).selectImage(index);
@@ -296,6 +298,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       style: LegoTypography.labelMedium.copyWith(
                         color: LegoColors.white.withValues(alpha: 0.6),
                         fontFamily: 'monospace',
+                        fontSize: 8,
+                        height: 1.8,
                       ),
                     ),
                     const SizedBox(width: LegoSpacing.xs),
@@ -304,6 +308,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         entry.message,
                         style: LegoTypography.bodyMedium.copyWith(
                           color: _getLogColor(entry.level),
+                          fontSize: 10,
                         ),
                       ),
                     ),

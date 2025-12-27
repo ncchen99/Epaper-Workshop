@@ -51,27 +51,16 @@ class LegoTopBar extends StatelessWidget implements PreferredSizeWidget {
         padding: const EdgeInsets.symmetric(horizontal: LegoSpacing.md),
         child: Row(
           children: [
-            // LEGO logo placeholder (optional studs)
-            _buildStuds(2),
-            const SizedBox(width: LegoSpacing.sm),
-
-            // Title
-            Expanded(
-              child: Text(
-                title,
-                style: LegoTypography.titleLarge.copyWith(
-                  color: LegoColors.white,
-                  shadows: [
-                    Shadow(
-                      color: Colors.black.withValues(alpha: 0.3),
-                      offset: const Offset(1, 1),
-                      blurRadius: 2,
-                    ),
-                  ],
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
+            // LEGO logo image (enlarged, no title)
+            Image.asset(
+              'assets/images/icon/lego.png',
+              height: 48,
+              width: 48,
+              fit: BoxFit.contain,
             ),
+
+            // Spacer to push status chip to the right
+            const Spacer(),
 
             // Status chip
             if (connectionStatus != null)
@@ -82,34 +71,6 @@ class LegoTopBar extends StatelessWidget implements PreferredSizeWidget {
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildStuds(int count) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: List.generate(count, (index) {
-        return Container(
-          width: 12,
-          height: 12,
-          margin: const EdgeInsets.only(right: 4),
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: _darken(LegoColors.red, 0.1),
-            border: Border.all(
-              color: LegoColors.white.withValues(alpha: 0.2),
-              width: 1,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.2),
-                offset: const Offset(0, 1),
-                blurRadius: 1,
-              ),
-            ],
-          ),
-        );
-      }),
     );
   }
 

@@ -64,13 +64,11 @@ class _LegoImageTileState extends State<LegoImageTile>
 
   @override
   Widget build(BuildContext context) {
-    final borderColor = widget.isSelected
-        ? LegoColors.blue
-        : LegoColors.backgroundGray;
-    final borderWidth = widget.isSelected ? 4.0 : 2.0;
-    final studColor = widget.isSelected
-        ? LegoColors.blue
-        : LegoColors.backgroundGray;
+    final borderColor =
+        widget.isSelected ? LegoColors.blue : LegoColors.backgroundGray;
+    final borderWidth = widget.isSelected ? 3.0 : 2.0;
+    final studColor =
+        widget.isSelected ? LegoColors.blue : LegoColors.backgroundGray;
 
     return GestureDetector(
       onTapDown: _handleTapDown,
@@ -85,44 +83,40 @@ class _LegoImageTileState extends State<LegoImageTile>
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeInOut,
+          clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
+            color: studColor,
             borderRadius: BorderRadius.circular(LegoSpacing.borderRadius),
             border: Border.all(color: borderColor, width: borderWidth),
-            boxShadow: widget.isSelected
-                ? LegoShadows.selectedGlow(LegoColors.blue)
-                : LegoShadows.raised,
+            boxShadow:
+                widget.isSelected
+                    ? LegoShadows.selectedGlow(LegoColors.blue)
+                    : LegoShadows.raised,
           ),
           child: Column(
-            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Studs on top
+              // Studs on top (inside card)
               Container(
-                height: LegoSpacing.studDiameter + LegoSpacing.xs,
-                decoration: BoxDecoration(
-                  color: studColor,
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(LegoSpacing.borderRadius - 2),
-                    topRight: Radius.circular(LegoSpacing.borderRadius - 2),
-                  ),
-                ),
+                padding: const EdgeInsets.only(top: 10, bottom: 6),
+                decoration: BoxDecoration(color: studColor),
                 child: CustomPaint(
-                  size: Size(double.infinity, LegoSpacing.studDiameter),
+                  size: const Size(double.infinity, 12),
                   painter: LegoStudPainter(baseColor: studColor, studCount: 3),
                 ),
               ),
 
-              // Image
-              ClipRRect(
-                borderRadius: const BorderRadius.only(
-                  bottomLeft: Radius.circular(LegoSpacing.borderRadius - 2),
-                  bottomRight: Radius.circular(LegoSpacing.borderRadius - 2),
-                ),
-                child: AnimatedOpacity(
-                  duration: const Duration(milliseconds: 200),
-                  opacity: widget.isSelected ? 1.0 : 0.7,
-                  child: AspectRatio(
-                    aspectRatio: 4 / 3,
-                    child: Image(image: widget.image, fit: BoxFit.cover),
+              // Image - use Expanded to fill available space
+              Expanded(
+                child: ClipRRect(
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 200),
+                    opacity: widget.isSelected ? 1.0 : 0.8,
+                    child: Image(
+                      image: widget.image,
+                      fit: BoxFit.cover,
+                      width: double.infinity,
+                    ),
                   ),
                 ),
               ),
@@ -131,26 +125,28 @@ class _LegoImageTileState extends State<LegoImageTile>
               if (widget.label != null)
                 Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.all(LegoSpacing.xs),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: LegoSpacing.xs,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
-                    color: widget.isSelected
-                        ? LegoColors.blue
-                        : LegoColors.backgroundGray,
-                    borderRadius: const BorderRadius.only(
-                      bottomLeft: Radius.circular(LegoSpacing.borderRadius - 2),
-                      bottomRight: Radius.circular(
-                        LegoSpacing.borderRadius - 2,
-                      ),
-                    ),
+                    color:
+                        widget.isSelected
+                            ? LegoColors.blue
+                            : LegoColors.backgroundGray,
                   ),
                   child: Text(
                     widget.label!,
                     style: LegoTypography.labelMedium.copyWith(
-                      color: widget.isSelected
-                          ? LegoColors.white
-                          : LegoColors.black,
+                      color:
+                          widget.isSelected
+                              ? LegoColors.white
+                              : LegoColors.black,
+                      fontSize: 10,
                     ),
                     textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
             ],
