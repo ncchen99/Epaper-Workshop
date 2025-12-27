@@ -15,7 +15,7 @@ class LegoEPaperApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'LEGO E-Ink Controller',
+      title: 'E-Ink Controller',
       debugShowCheckedModeBanner: false,
       theme: LegoTheme.light,
       home: const HomeScreen(),

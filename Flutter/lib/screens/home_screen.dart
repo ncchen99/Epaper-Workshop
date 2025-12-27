@@ -193,8 +193,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             physics: const NeverScrollableScrollPhysics(),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
-              crossAxisSpacing: LegoSpacing.sm,
-              mainAxisSpacing: LegoSpacing.sm,
+              crossAxisSpacing: LegoSpacing.md,
+              mainAxisSpacing: LegoSpacing.md,
               childAspectRatio: 1.0,
             ),
             itemCount: imageState.availableImages.length,

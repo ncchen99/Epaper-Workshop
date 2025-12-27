@@ -22,9 +22,10 @@ class LegoBottomSheet extends StatelessWidget {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (context) => LegoBottomSheet(
-        onSelect: (source) => Navigator.of(context).pop(source),
-      ),
+      builder:
+          (context) => LegoBottomSheet(
+            onSelect: (source) => Navigator.of(context).pop(source),
+          ),
     );
   }
 
@@ -75,7 +76,10 @@ class LegoBottomSheet extends StatelessWidget {
               children: [
                 // Studs on top
                 SizedBox(
-                  height: LegoSpacing.studDiameter + LegoSpacing.sm,
+                  height:
+                      LegoSpacing.studDiameter +
+                      LegoSpacing.lg +
+                      LegoSpacing.sm,
                   child: CustomPaint(
                     size: Size(double.infinity, LegoSpacing.studDiameter),
                     painter: LegoStudPainter(
@@ -126,12 +130,12 @@ class LegoBottomSheet extends StatelessWidget {
                   ),
                 ),
 
-                const SizedBox(height: LegoSpacing.lg),
+                const SizedBox(height: LegoSpacing.md),
 
                 // Cancel button
                 Padding(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: LegoSpacing.lg,
+                    horizontal: LegoSpacing.md,
                   ),
                   child: TextButton(
                     onPressed: () => Navigator.of(context).pop(),
@@ -144,13 +148,11 @@ class LegoBottomSheet extends StatelessWidget {
                   ),
                 ),
 
-                SizedBox(
-                  height:
-                      MediaQuery.of(context).padding.bottom + LegoSpacing.md,
-                ),
+                SizedBox(height: LegoSpacing.md),
               ],
             ),
           ),
+          SizedBox(height: MediaQuery.of(context).padding.bottom),
         ],
       ),
     );
