@@ -58,7 +58,7 @@ const char *CLOUD_BASE_URL =
     "https://REMOVED_R2_PUBLIC_ID.r2.dev/"; // 注意結尾要有斜線 / 
     // "https://REMOVED_R2_PUBLIC_ID.r2.dev/"; // 注意結尾要有斜線 /
 // 三個插槽的圖片檔名（Flutter App 上傳時需覆蓋這些檔名）
-const char *SLOT1_FILENAME = "test.png"; // 插槽 1（對應按鈕 1）
+const char *SLOT1_FILENAME = "test.jpg"; // 插槽 1（對應按鈕 1）
 const char *SLOT2_FILENAME = "demo_1.png";  // 插槽 2（對應按鈕 2）
 const char *SLOT3_FILENAME = "demo_2.png";  // 插槽 3（對應按鈕 3）
 
@@ -82,6 +82,11 @@ unsigned long debounceDelay =
 unsigned long btn1PressStartTime = 0; // 按鈕 1 開始被按下的時間
 bool btn1LongPressTriggered = false;  // 標記長按是否已觸發（避免重複觸發）
 const unsigned long LONG_PRESS_DURATION = 3000; // 長按門檻時間（3000ms = 3秒）
+
+// ------------------ API 觸發 Flag 變數 ------------------
+// 避免在 AsyncWebServer callback 中執行耗時操作（會觸發 Watchdog Timer）
+volatile int updateSlotObj = 0; // 標記需要更新的 slot (1-3)，0 表示無需更新
+volatile int showSlotObj = 0;   // 標記需要顯示的 slot (1-3)，0 表示無需顯示
 
 //------------------------ LED 控制函式 ------------------------------//
 // 這個函式用來控制板子上的 NeoPixel LED 顯示顏色
@@ -135,11 +140,16 @@ void initCallback(pngle_t *pngle, uint32_t w, uint32_t h) {
   imgW = w;
   imgH = h;
 
-  // 你若只顯示到固定尺寸的 EPD，這裡可以檢查/拒絕超出大小
+  // ========== 關鍵修正：PNG 尺寸檢查防呆 ==========
+  // 如果圖片尺寸不符合電子紙解析度，直接拒絕處理
   if (imgW != EPD_WIDTH || imgH != EPD_HEIGHT) {
-    Serial.printf("PNG size %ux%u != EPD %ux%u\n", imgW, imgH, EPD_WIDTH,
-                  EPD_HEIGHT);
-    // 視需求可以直接失敗 return
+    Serial.println("========== 錯誤：PNG 尺寸不符！ ==========");
+    Serial.printf("PNG 尺寸: %ux%u\n", imgW, imgH);
+    Serial.printf("EPD 尺寸: %ux%u\n", EPD_WIDTH, EPD_HEIGHT);
+    Serial.println("請確保上傳的 PNG 圖片尺寸為 400x600 或 600x400");
+    Serial.println("=========================================");
+    failed = true; // 標記失敗
+    return; // 直接返回，不進行後續處理
   }
 
   // 分配/重新分配 png_rgb_canvas
@@ -826,18 +836,17 @@ void setup() {
 
   // Init REST API Endpoints
 
+  // ========== 關鍵修正：使用 Flag 機制避免在 Callback 中執行耗時操作 ==========
   // API: Show Image
   // GET /api/show?slot=<1|2|3>
   server.on("/api/show", HTTP_GET, [](AsyncWebServerRequest *request) {
     if (request->hasParam("slot")) {
       int slot = request->getParam("slot")->value().toInt();
       if (slot >= 1 && slot <= 3) {
-        bool success = showImage(slot);
-        if (success) {
-          request->send(200, "text/plain", "OK");
-        } else {
-          request->send(404, "text/plain", "Image file not found. Please update slot first.");
-        }
+        // 不直接執行，而是設定 Flag，讓 loop() 去執行
+        showSlotObj = slot;
+        request->send(200, "text/plain", "Show request queued");
+        Serial.printf("API: 收到顯示請求 - Slot %d\n", slot);
       } else {
         request->send(400, "text/plain", "Invalid Slot");
       }
@@ -852,8 +861,10 @@ void setup() {
     if (request->hasParam("slot")) {
       int slot = request->getParam("slot")->value().toInt();
       if (slot >= 1 && slot <= 3) {
-        updateImage(slot);
-        request->send(200, "text/plain", "OK");
+        // 不直接執行，而是設定 Flag，讓 loop() 去執行
+        updateSlotObj = slot;
+        request->send(200, "text/plain", "Update request queued");
+        Serial.printf("API: 收到更新請求 - Slot %d\n", slot);
       } else {
         request->send(400, "text/plain", "Invalid Slot");
       }
@@ -896,19 +907,19 @@ void setup() {
   LED(1, 32, 255, BRIGHTNESS); // LED 2 顯示顏色 → 表示「成功啟動檔案系統」
   LED(2, 32, 255, BRIGHTNESS); // LED 2 顯示顏色 → 表示「成功啟動檔案系統」
 
-  // Serial.println("Formatting LittleFS...");
-  // if (LittleFS.format()) // 格式化檔案系統，清空檔案
-  // {
-  //   Serial.println("LittleFS formatted successfully!");
-  //   LED(0, 64, 255, BRIGHTNESS); // LED 2 顯示顏色 → 表示「成功啟動檔案系統」
-  //   LED(1, 64, 255, BRIGHTNESS); // LED 2 顯示顏色 → 表示「成功啟動檔案系統」
-  //   LED(2, 64, 255, BRIGHTNESS); // LED 2 顯示顏色 → 表示「成功啟動檔案系統」
-  // } else {
-  //   Serial.println("LittleFS format failed!");
-  //   LED(0, 0, 255, BRIGHTNESS); // LED 2 亮起另一個顏色，表示「檔案系統失敗」
-  //   LED(1, 0, 255, BRIGHTNESS); // LED 2 亮起另一個顏色，表示「檔案系統失敗」
-  //   LED(2, 0, 255, BRIGHTNESS); // LED 2 亮起另一個顏色，表示「檔案系統失敗」
-  // }
+  Serial.println("Formatting LittleFS...");
+  if (LittleFS.format()) // 格式化檔案系統，清空檔案
+  {
+    Serial.println("LittleFS formatted successfully!");
+    LED(0, 64, 255, BRIGHTNESS); // LED 2 顯示顏色 → 表示「成功啟動檔案系統」
+    LED(1, 64, 255, BRIGHTNESS); // LED 2 顯示顏色 → 表示「成功啟動檔案系統」
+    LED(2, 64, 255, BRIGHTNESS); // LED 2 顯示顏色 → 表示「成功啟動檔案系統」
+  } else {
+    Serial.println("LittleFS format failed!");
+    LED(0, 0, 255, BRIGHTNESS); // LED 2 亮起另一個顏色，表示「檔案系統失敗」
+    LED(1, 0, 255, BRIGHTNESS); // LED 2 亮起另一個顏色，表示「檔案系統失敗」
+    LED(2, 0, 255, BRIGHTNESS); // LED 2 亮起另一個顏色，表示「檔案系統失敗」
+  }
 
   // 在 PSRAM 分配一塊 RGB 畫布，大小 = 寬 * 高 * 3 bytes (R,G,B)
   png_rgb_canvas = (uint8_t *)ps_malloc(EPD_4IN0E_WIDTH * EPD_4IN0E_HEIGHT * 3);
@@ -1007,6 +1018,27 @@ void setup() {
 // ------------------ 主循環 ------------------
 // Arduino 的 loop()：會不斷重複執行
 void loop() {
+  // ========== 關鍵修正：在主迴圈中處理 API 觸發的請求 ==========
+  // 檢查是否有待處理的更新請求（來自 API）
+  if (updateSlotObj > 0) {
+    int slot = updateSlotObj;
+    updateSlotObj = 0; // 立即重置，避免重複執行
+    Serial.printf("執行更新請求 - Slot %d\n", slot);
+    updateImage(slot);
+    Serial.println("更新完成！");
+  }
+  
+  // 檢查是否有待處理的顯示請求（來自 API）
+  if (showSlotObj > 0) {
+    int slot = showSlotObj;
+    showSlotObj = 0; // 立即重置，避免重複執行
+    Serial.printf("執行顯示請求 - Slot %d\n", slot);
+    bool success = showImage(slot);
+    if (!success) {
+      Serial.println("顯示失敗：檔案不存在，請先更新 Slot");
+    }
+  }
+  
   // 讀取按鈕的當前狀態
   bool Btn1Value = digitalRead(btn1Pin);
   bool Btn2Value = digitalRead(btn2Pin);
