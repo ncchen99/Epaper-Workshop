@@ -16,6 +16,9 @@ dependencies:
   # HTTP Client
   dio: ^5.7.0
   
+  # mDNS Discovery (Native Android NSD + iOS Bonjour)
+  nsd: ^4.1.0
+  
   # Image Picker (Camera/Gallery)
   image_picker: ^1.1.2
   

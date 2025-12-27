@@ -61,8 +61,8 @@ class ImageSelectionState {
 
   SelectableImage? get selectedImage =>
       selectedIndex != null && selectedIndex! < availableImages.length
-      ? availableImages[selectedIndex!]
-      : null;
+          ? availableImages[selectedIndex!]
+          : null;
 
   ImageSelectionState copyWith({
     List<SelectableImage>? availableImages,
@@ -72,9 +72,8 @@ class ImageSelectionState {
   }) {
     return ImageSelectionState(
       availableImages: availableImages ?? this.availableImages,
-      selectedIndex: clearSelection
-          ? null
-          : (selectedIndex ?? this.selectedIndex),
+      selectedIndex:
+          clearSelection ? null : (selectedIndex ?? this.selectedIndex),
       isUploading: isUploading ?? this.isUploading,
     );
   }
@@ -92,12 +91,12 @@ class ImageSelectionNotifier extends StateNotifier<ImageSelectionState> {
       availableImages: [
         SelectableImage.preset(
           id: 0,
-          assetPath: 'assets/images/demo_1.png',
+          assetPath: 'assets/images/demo_1.jpg',
           slot: 1,
         ),
         SelectableImage.preset(
           id: 1,
-          assetPath: 'assets/images/demo_2.png',
+          assetPath: 'assets/images/demo_2.jpg',
           slot: 2,
         ),
       ],

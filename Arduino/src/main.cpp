@@ -60,8 +60,8 @@ const char *CLOUD_BASE_URL =
 // "https://REMOVED_R2_PUBLIC_ID.r2.dev/"; // 注意結尾要有斜線 /
 // 三個插槽的圖片檔名（Flutter App 上傳時需覆蓋這些檔名）
 const char *SLOT1_FILENAME = "test.jpg";   // 插槽 1（對應按鈕 1）
-const char *SLOT2_FILENAME = "demo_1.png"; // 插槽 2（對應按鈕 2）
-const char *SLOT3_FILENAME = "demo_2.png"; // 插槽 3（對應按鈕 3）
+const char *SLOT2_FILENAME = "demo_1.jpg"; // 插槽 2（對應按鈕 2）
+const char *SLOT3_FILENAME = "demo_2.jpg"; // 插槽 3（對應按鈕 3）
 
 // ------------------ 變數宣告 ------------------
 // 變數會改變，用來記錄狀態

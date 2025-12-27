@@ -7,22 +7,26 @@ class DeviceConnectionState {
   final ConnectionStatus status;
   final String? errorMessage;
   final String? deviceUrl;
+  final String? connectionMethod; // e.g., "mDNS Discovery", "Fallback IP"
 
   const DeviceConnectionState({
     this.status = ConnectionStatus.disconnected,
     this.errorMessage,
     this.deviceUrl,
+    this.connectionMethod,
   });
 
   DeviceConnectionState copyWith({
     ConnectionStatus? status,
     String? errorMessage,
     String? deviceUrl,
+    String? connectionMethod,
   }) {
     return DeviceConnectionState(
       status: status ?? this.status,
       errorMessage: errorMessage,
       deviceUrl: deviceUrl ?? this.deviceUrl,
+      connectionMethod: connectionMethod ?? this.connectionMethod,
     );
   }
 }
@@ -45,6 +49,7 @@ class DeviceConnectionNotifier extends StateNotifier<DeviceConnectionState> {
         state = state.copyWith(
           status: ConnectionStatus.connected,
           deviceUrl: _arduinoService.currentUrl,
+          connectionMethod: _arduinoService.connectionStatus,
           errorMessage: null,
         );
       } else {

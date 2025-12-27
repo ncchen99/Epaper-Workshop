@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:dio/dio.dart';
 import '../config.dart';
+import 'discovery_service.dart';
 
 /// Result of an Arduino API call
 class ArduinoResult {
@@ -17,10 +18,19 @@ class ArduinoResult {
       ArduinoResult(success: false, error: error);
 }
 
+/// Connection method used to connect to the Arduino
+enum ConnectionMethod {
+  mdnsDiscovery, // Found via mDNS/DNS-SD discovery
+  mdnsDirect, // Tried epaper.local directly
+  fallbackIp, // Using fallback IP address
+  notConnected,
+}
+
 /// Service for communicating with Arduino E-Paper device via REST API.
 ///
 /// Features:
-/// - Automatic fallback from mDNS to IP address
+/// - Native mDNS discovery (Android NSD + iOS Bonjour)
+/// - Automatic fallback to IP address
 /// - Direct image upload to Arduino (no cloud storage needed)
 ///
 /// API Endpoints:
@@ -29,14 +39,16 @@ class ArduinoResult {
 /// - POST /api/upload?slot={1,2,3} - Upload image directly to Arduino
 class ArduinoService {
   late Dio _dio;
-  String _currentBaseUrl = AppConfig.arduinoMdnsUrl;
-  bool _useFallback = false;
+  String _currentBaseUrl = '';
+  ConnectionMethod _connectionMethod = ConnectionMethod.notConnected;
+  final DiscoveryService _discoveryService = DiscoveryService();
 
   ArduinoService() {
-    _initDio(_currentBaseUrl);
+    _initDio(AppConfig.arduinoIpUrl);
   }
 
   void _initDio(String baseUrl) {
+    _currentBaseUrl = baseUrl;
     _dio = Dio(
       BaseOptions(
         baseUrl: baseUrl,
@@ -49,64 +61,93 @@ class ArduinoService {
   /// Get current connection URL (for display purposes)
   String get currentUrl => _currentBaseUrl;
 
-  /// Check if using fallback IP
-  bool get isUsingFallback => _useFallback;
+  /// Get current connection method
+  ConnectionMethod get connectionMethod => _connectionMethod;
 
-  /// Try to connect, with automatic fallback to IP if mDNS fails
+  /// Get human-readable connection status
+  String get connectionStatus {
+    switch (_connectionMethod) {
+      case ConnectionMethod.mdnsDiscovery:
+        return 'Connected via mDNS Discovery';
+      case ConnectionMethod.mdnsDirect:
+        return 'Connected via epaper.local';
+      case ConnectionMethod.fallbackIp:
+        return 'Connected via IP (${AppConfig.arduinoIpUrl})';
+      case ConnectionMethod.notConnected:
+        return 'Not connected';
+    }
+  }
+
+  /// Check if using fallback IP
+  bool get isUsingFallback => _connectionMethod == ConnectionMethod.fallbackIp;
+
+  /// Try to connect using the best available method
+  ///
+  /// Priority:
+  /// 1. Native mDNS discovery (most reliable on Android)
+  /// 2. Direct mDNS URL (epaper.local)
+  /// 3. Fallback IP address
   Future<bool> checkConnection() async {
     if (AppConfig.mockMode) {
       await Future.delayed(const Duration(milliseconds: 500));
+      _connectionMethod = ConnectionMethod.mdnsDiscovery;
       return true;
     }
 
-    // Try mDNS first
-    if (!_useFallback) {
-      _initDio(AppConfig.arduinoMdnsUrl);
-      try {
-        final response = await _dio.get('/');
-        if (response.statusCode == 200) {
-          _currentBaseUrl = AppConfig.arduinoMdnsUrl;
-          return true;
-        }
-      } catch (e) {
-        print('mDNS connection failed: $e');
-      }
-    }
+    // Method 1: Try native mDNS discovery
+    final discoveredUrl = await _discoveryService.discoverDevice(
+      timeout: const Duration(seconds: 3),
+    );
 
-    // Try fallback IP
-    _initDio(AppConfig.arduinoIpUrl);
-    try {
-      final response = await _dio.get('/');
-      if (response.statusCode == 200) {
-        _currentBaseUrl = AppConfig.arduinoIpUrl;
-        _useFallback = true;
-        print('Using fallback IP: ${AppConfig.arduinoIpUrl}');
+    if (discoveredUrl != null && discoveredUrl != AppConfig.arduinoIpUrl) {
+      _initDio(discoveredUrl);
+      if (await _testConnection()) {
+        _connectionMethod = ConnectionMethod.mdnsDiscovery;
         return true;
       }
-    } catch (e) {
-      print('IP connection also failed: $e');
     }
 
+    // Method 2: Try direct mDNS URL
+    _initDio(AppConfig.arduinoMdnsUrl);
+    if (await _testConnection()) {
+      _connectionMethod = ConnectionMethod.mdnsDirect;
+      return true;
+    }
+
+    // Method 3: Try fallback IP
+    _initDio(AppConfig.arduinoIpUrl);
+    if (await _testConnection()) {
+      _connectionMethod = ConnectionMethod.fallbackIp;
+      return true;
+    }
+
+    _connectionMethod = ConnectionMethod.notConnected;
     return false;
+  }
+
+  /// Test if current connection works
+  Future<bool> _testConnection() async {
+    try {
+      final response = await _dio.get('/');
+      return response.statusCode == 200;
+    } catch (e) {
+      return false;
+    }
   }
 
   /// Force switch to fallback IP
   void switchToFallback() {
-    _currentBaseUrl = AppConfig.arduinoIpUrl;
-    _useFallback = true;
-    _initDio(_currentBaseUrl);
+    _initDio(AppConfig.arduinoIpUrl);
+    _connectionMethod = ConnectionMethod.fallbackIp;
   }
 
   /// Force switch to mDNS
   void switchToMdns() {
-    _currentBaseUrl = AppConfig.arduinoMdnsUrl;
-    _useFallback = false;
-    _initDio(_currentBaseUrl);
+    _initDio(AppConfig.arduinoMdnsUrl);
+    _connectionMethod = ConnectionMethod.mdnsDirect;
   }
 
   /// Show image from local storage (slot 1, 2, or 3)
-  ///
-  /// Calls: GET /api/show?slot={slot}
   Future<ArduinoResult> showImage(int slot) async {
     if (slot < 1 || slot > 3) {
       return ArduinoResult.failure('Invalid slot: $slot. Must be 1, 2, or 3.');
@@ -136,8 +177,6 @@ class ArduinoService {
   }
 
   /// Update image from cloud and display (slot 1, 2, or 3)
-  ///
-  /// Calls: GET /api/update?slot={slot}
   Future<ArduinoResult> updateImage(int slot) async {
     if (slot < 1 || slot > 3) {
       return ArduinoResult.failure('Invalid slot: $slot. Must be 1, 2, or 3.');
@@ -167,10 +206,6 @@ class ArduinoService {
   }
 
   /// Upload image directly to Arduino and display
-  ///
-  /// Calls: POST /api/upload?slot={slot}
-  /// This uploads the processed JPEG image directly to the Arduino,
-  /// which saves it to local storage and displays it.
   Future<ArduinoResult> uploadImage(int slot, File imageFile) async {
     if (slot < 1 || slot > 3) {
       return ArduinoResult.failure('Invalid slot: $slot. Must be 1, 2, or 3.');
@@ -195,7 +230,6 @@ class ArduinoService {
         queryParameters: {'slot': slot},
         data: formData,
         options: Options(
-          // Longer timeout for upload
           sendTimeout: const Duration(seconds: 60),
           receiveTimeout: const Duration(seconds: 120),
         ),
@@ -227,5 +261,10 @@ class ArduinoService {
       default:
         return e.message ?? 'Network error occurred';
     }
+  }
+
+  /// Dispose resources
+  void dispose() {
+    _discoveryService.dispose();
   }
 }
