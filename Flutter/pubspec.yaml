@@ -1,7 +1,7 @@
 name: lego_epaper_controller
 description: "LEGO-style Flutter App for controlling Arduino E-Paper display"
 publish_to: 'none'
-version: 0.1.0
+version: 0.1.1+2
 
 environment:
   sdk: ^3.7.2
@@ -43,6 +43,9 @@ flutter_launcher_icons:
   ios: true
   remove_alpha_ios: true
   image_path: "assets/images/icon/icon.png"
+  adaptive_icon_background: "#EADCDC"
+  adaptive_icon_foreground: "assets/images/icon/foreground.png"
+
 
   web:
     generate: true

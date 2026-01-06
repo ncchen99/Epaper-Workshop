@@ -179,15 +179,17 @@ class LegoStudPainter extends CustomPainter {
       final center = Offset(centerX, centerY);
 
       // Main stud body
-      final studPaint = Paint()
-        ..color = baseColor
-        ..style = PaintingStyle.fill;
+      final studPaint =
+          Paint()
+            ..color = baseColor
+            ..style = PaintingStyle.fill;
       canvas.drawCircle(center, studRadius, studPaint);
 
       // Top highlight (lighter)
-      final highlightPaint = Paint()
-        ..color = LegoColors.studHighlight
-        ..style = PaintingStyle.fill;
+      final highlightPaint =
+          Paint()
+            ..color = LegoColors.studHighlight
+            ..style = PaintingStyle.fill;
       canvas.drawArc(
         Rect.fromCircle(center: center, radius: studRadius - 1),
         -2.5,
@@ -197,9 +199,10 @@ class LegoStudPainter extends CustomPainter {
       );
 
       // Bottom shadow (darker)
-      final shadowPaint = Paint()
-        ..color = LegoColors.studShadow
-        ..style = PaintingStyle.fill;
+      final shadowPaint =
+          Paint()
+            ..color = LegoColors.studShadow
+            ..style = PaintingStyle.fill;
       canvas.drawArc(
         Rect.fromCircle(center: center, radius: studRadius - 1),
         0.5,
@@ -209,10 +212,11 @@ class LegoStudPainter extends CustomPainter {
       );
 
       // Inner circle for depth
-      final innerPaint = Paint()
-        ..color = Colors.black.withValues(alpha: 0.1)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1;
+      final innerPaint =
+          Paint()
+            ..color = Colors.black.withValues(alpha: 0.1)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1;
       canvas.drawCircle(center, studRadius * 0.6, innerPaint);
     }
   }

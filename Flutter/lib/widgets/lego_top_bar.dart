@@ -51,12 +51,30 @@ class LegoTopBar extends StatelessWidget implements PreferredSizeWidget {
         padding: const EdgeInsets.symmetric(horizontal: LegoSpacing.md),
         child: Row(
           children: [
-            // LEGO logo image (enlarged, no title)
-            Image.asset(
-              'assets/images/icon/lego.png',
-              height: 48,
-              width: 48,
-              fit: BoxFit.contain,
+            // Outlined logo image
+            Stack(
+              children: [
+                // Outline layers: offset in multiple directions to create a stroke effect
+                for (double i = -1.0; i <= 1.0; i += 1.0)
+                  for (double j = -1.0; j <= 1.0; j += 1.0)
+                    if (i != 0 || j != 0)
+                      Transform.translate(
+                        offset: Offset(i, j),
+                        child: Image.asset(
+                          'assets/images/icon/logo.png',
+                          height: 25,
+                          color: Colors.white,
+                          colorBlendMode: BlendMode.srcIn,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                // Main logo
+                Image.asset(
+                  'assets/images/icon/logo.png',
+                  height: 25,
+                  fit: BoxFit.contain,
+                ),
+              ],
             ),
 
             // Spacer to push status chip to the right
