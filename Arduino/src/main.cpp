@@ -1062,6 +1062,7 @@ void setup() {
   LED(1, 32, 255, BRIGHTNESS); // LED 2 顯示顏色 → 表示「成功啟動檔案系統」
   LED(2, 32, 255, BRIGHTNESS); // LED 2 顯示顏色 → 表示「成功啟動檔案系統」
 
+  
   Serial.println("Formatting LittleFS...");
   if (LittleFS.format()) // 格式化檔案系統，清空檔案
   {
@@ -1075,6 +1076,7 @@ void setup() {
     LED(1, 0, 255, BRIGHTNESS); // LED 2 亮起另一個顏色，表示「檔案系統失敗」
     LED(2, 0, 255, BRIGHTNESS); // LED 2 亮起另一個顏色，表示「檔案系統失敗」
   }
+  
 
   // 在 PSRAM 分配一塊 RGB 畫布，大小 = 寬 * 高 * 3 bytes (R,G,B)
   png_rgb_canvas = (uint8_t *)ps_malloc(EPD_4IN0E_WIDTH * EPD_4IN0E_HEIGHT * 3);
@@ -1083,9 +1085,9 @@ void setup() {
   memset(epd_bitmap_canvas, 0x00, EPD_WIDTH * EPD_HEIGHT / 2);
 
   // 設置PIN腳
-  pinMode(btn1Pin, INPUT);
-  pinMode(btn2Pin, INPUT);
-  pinMode(btn3Pin, INPUT);
+  pinMode(btn1Pin, INPUT_PULLUP);
+  pinMode(btn2Pin, INPUT_PULLUP);
+  pinMode(btn3Pin, INPUT_PULLUP);
 
   // // 建立一個簡單的測試圖案（7 個不同的填充樣式）
   // uint8_t pattern[] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66};
@@ -1113,7 +1115,7 @@ void setup() {
   LED(2, 32, 255, BRIGHTNESS); // LED 顯示另一個顏色 → 表示「準備初始化電子紙」
   DEV_Module_Init();           // 初始化開發板相關模組（SPI, GPIO 等）
   EPD_4IN0E_Init();            // 初始化電子紙顯示器
-  // EPD_4IN0E_Clear(EPD_4IN0E_WHITE); // 如果要先清除畫面，可以打開這行
+  // EPD_4IN0E_Clear(EPD_4IN0E_WHITE); // 啟用清除畫面功能
   LED(0, 128, 255, BRIGHTNESS);     // LED 換顏色 → 表示「電子紙初始化完成」
   LED(1, 128, 255, BRIGHTNESS);     // LED 換顏色 → 表示「電子紙初始化完成」
   LED(2, 128, 255, BRIGHTNESS);     // LED 換顏色 → 表示「電子紙初始化完成」
