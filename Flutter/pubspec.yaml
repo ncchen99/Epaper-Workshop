@@ -15,6 +15,12 @@ dependencies:
   
   # HTTP Client
   dio: ^5.7.0
+
+  # SHA256/HMAC for AWS SigV4 (Cloudflare R2 upload)
+  crypto: ^3.0.6
+
+  # Runtime .env loader
+  flutter_dotenv: ^5.2.1
   
   # MQTT Client
   mqtt_client: ^10.6.0
@@ -74,5 +80,6 @@ flutter:
   uses-material-design: true
   
   assets:
+    - .env
     - assets/images/
     - assets/images/icon/

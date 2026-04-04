@@ -1,7 +1,9 @@
 import 'dart:io';
 import 'dart:convert';
 import 'package:dio/dio.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 /// Cloudflare R2 上傳服務
 ///
@@ -9,31 +11,18 @@ import 'package:flutter/foundation.dart' show debugPrint;
 /// 並回傳公開存取的 URL。
 class R2UploadService {
   final Dio _dio = Dio();
+  static const String _region = 'auto';
+  static const String _service = 's3';
 
-  // R2 設定（從 .env 讀取或直接設定）
-  // 注意：正式環境建議使用 flutter_dotenv 從 .env 讀取
-  static const String _accessKeyId = String.fromEnvironment(
-    'R2_ACCESS_KEY_ID',
-    defaultValue: 'REMOVED_R2_ACCESS_KEY',
-  );
-  static const String _secretAccessKey = String.fromEnvironment(
-    'R2_SECRET_ACCESS_KEY',
-    defaultValue:
-        'REMOVED_R2_SECRET_KEY',
-  );
-  static const String _endpointUrl = String.fromEnvironment(
-    'R2_ENDPOINT_URL',
-    defaultValue:
-        'https://REMOVED_R2_ENDPOINT_ID.r2.cloudflarestorage.com',
-  );
-  static const String _bucketName = String.fromEnvironment(
-    'R2_BUCKET_NAME',
-    defaultValue: 'epaper-workshop',
-  );
-  static const String _publicUrl = String.fromEnvironment(
-    'R2_PUBLIC_URL',
-    defaultValue: 'https://REMOVED_R2_PUBLIC_ID.r2.dev',
-  );
+  String get _accessKeyId => dotenv.env['R2_ACCESS_KEY_ID'] ?? '';
+  String get _secretAccessKey => dotenv.env['R2_SECRET_ACCESS_KEY'] ?? '';
+  String get _endpointUrl => dotenv.env['R2_ENDPOINT_URL'] ?? '';
+  String get _bucketName => dotenv.env['R2_BUCKET_NAME'] ?? '';
+  String get _publicUrl => dotenv.env['R2_PUBLIC_URL'] ?? '';
+  String get _endpointBaseUrl =>
+      _endpointUrl.endsWith('/')
+          ? _endpointUrl.substring(0, _endpointUrl.length - 1)
+          : _endpointUrl;
 
   /// 上傳圖片到 R2
   ///
@@ -43,36 +32,51 @@ class R2UploadService {
   /// 回傳公開存取 URL
   Future<String> uploadImage(File imageFile, String filename) async {
     try {
+      if (_accessKeyId.isEmpty ||
+          _secretAccessKey.isEmpty ||
+          _endpointUrl.isEmpty ||
+          _bucketName.isEmpty ||
+          _publicUrl.isEmpty) {
+        throw Exception(
+          'R2 config is missing in .env. Required keys: '
+          'R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT_URL, '
+          'R2_BUCKET_NAME, R2_PUBLIC_URL',
+        );
+      }
+
       final bytes = await imageFile.readAsBytes();
+      final payloadHash = _sha256Hex(bytes);
 
-      // 使用 S3 PUT Object API
+      // 使用 S3-compatible PUT Object API（Cloudflare R2）
       final objectKey = filename;
-      final url = '$_endpointUrl/$_bucketName/$objectKey';
-      final dateStr = _getAmzDate();
-      final dateShort = dateStr.substring(0, 8);
+      final encodedKey = _encodeObjectKey(objectKey);
+      final url = '$_endpointBaseUrl/$_bucketName/$encodedKey';
+      final amzDate = _getAmzDate();
+      final dateShort = amzDate.substring(0, 8);
+      final host = Uri.parse(_endpointBaseUrl).host;
 
-      // 建立 AWS Signature V4 簽章
-      final headers = _signRequest(
+      final signed = _buildSigV4(
         method: 'PUT',
-        objectKey: objectKey,
+        canonicalUri: '/$_bucketName/$encodedKey',
+        host: host,
         contentType: 'image/jpeg',
-        contentLength: bytes.length,
-        date: dateStr,
+        payloadHash: payloadHash,
+        amzDate: amzDate,
         dateShort: dateShort,
-        payloadHash: _sha256Hex(bytes),
       );
 
       final response = await _dio.put(
         url,
-        data: Stream.fromIterable([bytes]),
+        data: bytes,
         options: Options(
           headers: {
-            ...headers,
+            ...signed,
             'Content-Type': 'image/jpeg',
             'Content-Length': bytes.length.toString(),
           },
           sendTimeout: const Duration(seconds: 60),
           receiveTimeout: const Duration(seconds: 30),
+          validateStatus: (status) => status != null && status < 500,
         ),
       );
 
@@ -81,10 +85,13 @@ class R2UploadService {
         debugPrint('R2 Upload success: $publicUrl');
         return publicUrl;
       } else {
-        throw Exception('R2 upload failed: HTTP ${response.statusCode}');
+        final body = response.data?.toString() ?? '(empty body)';
+        throw Exception('R2 upload failed: HTTP ${response.statusCode}, body: $body');
       }
     } on DioException catch (e) {
-      throw Exception('R2 upload error: ${e.message}');
+      final status = e.response?.statusCode;
+      final body = e.response?.data?.toString();
+      throw Exception('R2 upload error: ${e.message}, status: $status, body: $body');
     } catch (e) {
       throw Exception('R2 upload error: $e');
     }
@@ -98,8 +105,7 @@ class R2UploadService {
     return '${macAddress}_$timestamp.jpg';
   }
 
-  // ---- AWS Signature V4 實作 ----
-  // 簡化版，僅實作 PUT Object 所需的簽章
+  // ---- AWS Signature V4 ----
 
   String _getAmzDate() {
     final now = DateTime.now().toUtc();
@@ -112,31 +118,80 @@ class R2UploadService {
   }
 
   String _sha256Hex(List<int> data) {
-    // 使用 dart:convert 和 crypto
-    // 由於 dart:crypto 不是內建的，這裡使用簡化方式
-    // 實際實作中建議使用 crypto package
-    return 'UNSIGNED-PAYLOAD'; // R2 支援 unsigned payload
+    return sha256.convert(data).toString();
   }
 
-  Map<String, String> _signRequest({
+  List<int> _hmacSha256Bytes(List<int> key, String value) {
+    final hmac = Hmac(sha256, key);
+    return hmac.convert(utf8.encode(value)).bytes;
+  }
+
+  String _hmacSha256Hex(List<int> key, String value) {
+    final hmac = Hmac(sha256, key);
+    return hmac.convert(utf8.encode(value)).toString();
+  }
+
+  String _encodeObjectKey(String objectKey) {
+    return objectKey
+        .split('/')
+        .map(Uri.encodeComponent)
+        .join('/');
+  }
+
+  Map<String, String> _buildSigV4({
     required String method,
-    required String objectKey,
+    required String canonicalUri,
+    required String host,
     required String contentType,
-    required int contentLength,
-    required String date,
-    required String dateShort,
     required String payloadHash,
+    required String amzDate,
+    required String dateShort,
   }) {
-    // Cloudflare R2 支援簡化的認證方式
-    // 使用 AWS4-HMAC-SHA256 簽章
-    // 這裡使用 Basic Auth 作為替代（R2 也支援）
-    final authStr = base64Encode(
-      utf8.encode('$_accessKeyId:$_secretAccessKey'),
+    const signedHeaders =
+        'content-type;host;x-amz-content-sha256;x-amz-date';
+
+    final canonicalHeaders =
+        'content-type:$contentType\n'
+        'host:$host\n'
+        'x-amz-content-sha256:$payloadHash\n'
+        'x-amz-date:$amzDate\n';
+
+    final canonicalRequest =
+        '$method\n'
+        '$canonicalUri\n'
+        '\n'
+        '$canonicalHeaders\n'
+        '$signedHeaders\n'
+        '$payloadHash';
+
+    final credentialScope =
+        '$dateShort/$_region/$_service/aws4_request';
+
+    final stringToSign =
+        'AWS4-HMAC-SHA256\n'
+        '$amzDate\n'
+        '$credentialScope\n'
+        '${_sha256Hex(utf8.encode(canonicalRequest))}';
+
+    final kDate = _hmacSha256Bytes(
+      utf8.encode('AWS4$_secretAccessKey'),
+      dateShort,
     );
+    final kRegion = _hmacSha256Bytes(kDate, _region);
+    final kService = _hmacSha256Bytes(kRegion, _service);
+    final kSigning = _hmacSha256Bytes(kService, 'aws4_request');
+    final signature = _hmacSha256Hex(kSigning, stringToSign);
+
+    final authorization =
+        'AWS4-HMAC-SHA256 '
+        'Credential=$_accessKeyId/$credentialScope, '
+        'SignedHeaders=$signedHeaders, '
+        'Signature=$signature';
 
     return {
-      'Authorization': 'Basic $authStr',
-      'x-amz-date': date,
+      'Authorization': authorization,
+      'Host': host,
+      'x-amz-date': amzDate,
       'x-amz-content-sha256': payloadHash,
     };
   }
