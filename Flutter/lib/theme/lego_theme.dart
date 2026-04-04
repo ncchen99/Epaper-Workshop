@@ -36,6 +36,10 @@ class LegoColors {
   static const Color warning = Color(0xFFFFA726);
   static const Color info = Color(0xFF42A5F5);
 
+  // Convenience aliases
+  static const Color primary = red;
+  static const Color darkGray = Color(0xFF757575);
+
   // Stud Colors (for highlights/shadows)
   static const Color studHighlight = Color(0x40FFFFFF);
   static const Color studShadow = Color(0x30000000);

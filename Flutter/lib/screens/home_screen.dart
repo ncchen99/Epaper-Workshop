@@ -3,17 +3,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart' as picker;
 import 'dart:io';
 
+import '../config.dart';
 import '../theme/lego_theme.dart';
 import '../widgets/widgets.dart';
 import '../providers/providers.dart';
 import '../services/services.dart';
+import '../models/models.dart';
+import 'device_manage_screen.dart';
 
-/// Main home screen for the LEGO E-Paper Controller app.
+/// Main home screen for the LEGO E-Paper Controller app (MQTT version).
 ///
 /// Layout:
-/// - Header: LegoTopBar with title and connection status
+/// - Header: LegoTopBar with MQTT connection status
+/// - Device Selector: Select target E-Paper device
 /// - Image Select: Grid of preset images
-/// - Actions: Send, Upload, Reconnect buttons
+/// - Actions: Send, Upload, Device Management buttons
 /// - Log: Recent status messages
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -24,90 +28,124 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final ImagePicker _imagePicker = ImagePicker();
-  final UploadService _uploadService = UploadService();
+  final R2UploadService _r2Service = R2UploadService();
+  final ImageProcessorService _imageProcessor = ImageProcessorService();
 
   bool _isSending = false;
 
   @override
   void initState() {
     super.initState();
-    // Check connection on startup
+    // 啟動後自動連線 MQTT
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkConnection();
+      _connectMqtt();
     });
   }
 
-  Future<void> _checkConnection() async {
-    ref.read(logProvider.notifier).info('Checking device connection...');
-    await ref.read(deviceConnectionProvider.notifier).checkConnection();
+  Future<void> _connectMqtt() async {
+    ref.read(logProvider.notifier).info('Connecting to MQTT Broker...');
 
-    final status = ref.read(deviceConnectionProvider).status;
-    if (status == ConnectionStatus.connected) {
-      ref.read(logProvider.notifier).success('Device connected!');
+    final success = await ref.read(mqttConnectionProvider.notifier).connect(
+      AppConfig.mqttBrokerHost,
+      port: AppConfig.mqttBrokerPort,
+    );
+
+    if (success) {
+      ref.read(logProvider.notifier).success('MQTT Connected!');
+
+      // 監聽裝置狀態訊息
+      final mqttService = ref.read(mqttServiceProvider);
+      mqttService.stateMessageStream.listen((stateMsg) {
+        final statusText = '${stateMsg.mac}: ${stateMsg.status}';
+        if (stateMsg.isSuccess) {
+          ref.read(logProvider.notifier).success(statusText);
+        } else if (stateMsg.isError) {
+          ref.read(logProvider.notifier).error(statusText);
+        } else {
+          ref.read(logProvider.notifier).info(statusText);
+        }
+      });
     } else {
-      ref.read(logProvider.notifier).warning('Device not found');
+      final error = ref.read(mqttConnectionProvider).errorMessage;
+      ref.read(logProvider.notifier).error('MQTT Failed: $error');
     }
   }
 
   Future<void> _sendToEPaper() async {
-    final selectedImage = ref.read(imageSelectionProvider).selectedImage;
+    // 檢查是否已連線 MQTT
+    final mqttState = ref.read(mqttConnectionProvider);
+    if (!mqttState.isConnected) {
+      ref.read(logProvider.notifier).warning('MQTT not connected');
+      return;
+    }
 
+    // 檢查是否已選擇裝置
+    final deviceState = ref.read(deviceListProvider);
+    final targetDevice = deviceState.selectedDevice;
+    if (targetDevice == null) {
+      ref.read(logProvider.notifier).warning('Please select a device first');
+      return;
+    }
+
+    // 檢查是否已選擇圖片
+    final selectedImage = ref.read(imageSelectionProvider).selectedImage;
     if (selectedImage == null) {
       ref.read(logProvider.notifier).warning('Please select an image first');
       return;
     }
 
     setState(() => _isSending = true);
-    ref.read(deviceConnectionProvider.notifier).setSending();
-    ref.read(logProvider.notifier).info('Preparing image...');
+    ref.read(logProvider.notifier).info('Processing image...');
 
     try {
-      final slot = selectedImage.slot ?? 1;
-      final arduinoService = ref.read(arduinoServiceProvider);
+      final mqttService = ref.read(mqttServiceProvider);
 
-      // If it's an uploaded image, we need to process, upload, then update
-      if (!selectedImage.isPreset && selectedImage.file != null) {
-        ref
-            .read(logProvider.notifier)
-            .info('Processing: rotate, resize, crop to 400x600...');
-        ref.read(logProvider.notifier).info('Uploading to cloud storage...');
+      if (selectedImage.file != null) {
+        // ---- 處理圖片 → 上傳 R2 → MQTT 發送 URL ----
+        ref.read(logProvider.notifier).info('Processing: rotate, resize, crop...');
 
-        final uploadResult = await _uploadService.uploadImage(
-          selectedImage.file!,
-          slot,
+        // Step 1: 圖片處理
+        final processResult =
+            await _imageProcessor.processImage(selectedImage.file!);
+        if (!processResult.success || processResult.processedFile == null) {
+          throw Exception(processResult.error ?? 'Image processing failed');
+        }
+
+        ref.read(logProvider.notifier).info('Uploading to Cloudflare R2...');
+
+        // Step 2: 上傳到 R2
+        final filename =
+            R2UploadService.generateFilename(targetDevice.macAddress);
+        final imageUrl = await _r2Service.uploadImage(
+          processResult.processedFile!,
+          filename,
         );
 
-        if (!uploadResult.success) {
-          throw Exception(uploadResult.error);
-        }
+        ref.read(logProvider.notifier).info('Sending MQTT command...');
 
-        ref
-            .read(logProvider.notifier)
-            .success(
-              'Upload complete! Size: ${uploadResult.processedWidth}x${uploadResult.processedHeight}',
-            );
+        // Step 3: MQTT 發送更新指令
+        final cmd = MqttCommand.update(
+          imageUrl: imageUrl,
+          slot: selectedImage.slot ?? 1,
+        );
+        await mqttService.publishCommand(targetDevice.macAddress, cmd);
 
-        // // Now tell Arduino to update from cloud
-        // ref
-        //     .read(logProvider.notifier)
-        //     .info('Sending update command to E-Paper...');
-        // final result = await arduinoService.updateImage(slot);
-        // if (!result.success) {
-        //   throw Exception(result.error);
-        // }
+        // 清理暫存檔
+        try {
+          await processResult.processedFile!.delete();
+        } catch (_) {}
+
+        ref.read(logProvider.notifier).success(
+          'Sent to ${targetDevice.displayName}!',
+        );
       } else {
-        // For preset images, just show the existing slot
-        ref.read(logProvider.notifier).info('Displaying slot $slot...');
-        final result = await arduinoService.showImage(slot);
-        if (!result.success) {
-          throw Exception(result.error);
-        }
+        // Preset 圖片 → 顯示快取
+        ref.read(logProvider.notifier).info('Sending show command...');
+        final cmd = MqttCommand.show(slot: selectedImage.slot ?? 1);
+        await mqttService.publishCommand(targetDevice.macAddress, cmd);
+        ref.read(logProvider.notifier).success('Show command sent!');
       }
-
-      ref.read(deviceConnectionProvider.notifier).setConnected();
-      ref.read(logProvider.notifier).success('E-Paper updated successfully!');
     } catch (e) {
-      ref.read(deviceConnectionProvider.notifier).setError(e.toString());
       ref.read(logProvider.notifier).error('Failed: $e');
     } finally {
       setState(() => _isSending = false);
@@ -116,7 +154,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   Future<void> _uploadPhoto() async {
     final source = await LegoBottomSheet.show(context);
-
     if (source == null) return;
 
     try {
@@ -125,12 +162,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ? picker.ImageSource.camera
               : picker.ImageSource.gallery;
 
-      // Pick image without constraints - we'll process it ourselves
       final pickedFile = await _imagePicker.pickImage(source: pickerSource);
 
       if (pickedFile != null) {
         final file = File(pickedFile.path);
-        ref.read(logProvider.notifier).info('Processing image...');
+        ref.read(logProvider.notifier).info('Photo added!');
         ref.read(imageSelectionProvider.notifier).addUploadedImage(file);
         ref
             .read(logProvider.notifier)
@@ -141,9 +177,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
+  void _goToDeviceManage() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const DeviceManageScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final connectionState = ref.watch(deviceConnectionProvider);
+    final mqttState = ref.watch(mqttConnectionProvider);
+    final deviceState = ref.watch(deviceListProvider);
     final imageState = ref.watch(imageSelectionProvider);
     final logState = ref.watch(logProvider);
 
@@ -154,7 +198,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           // Header
           LegoTopBar(
             title: 'LEGO E-Ink Controller',
-            connectionStatus: connectionState.status,
+            connectionStatus: _mapMqttStatus(mqttState.status),
           ),
 
           // Main content
@@ -164,6 +208,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  // Device Selector
+                  _buildDeviceSelectorCard(deviceState),
+
+                  const SizedBox(height: LegoSpacing.md),
+
                   // Image Selection Area
                   _buildImageSelectionCard(imageState),
 
@@ -185,6 +234,109 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  /// 將 MQTT 狀態映射為 Widget 所需的 ConnectionStatus
+  ConnectionStatus _mapMqttStatus(MqttConnectionStatus status) {
+    switch (status) {
+      case MqttConnectionStatus.connected:
+        return ConnectionStatus.connected;
+      case MqttConnectionStatus.connecting:
+        return ConnectionStatus.sending;
+      case MqttConnectionStatus.error:
+        return ConnectionStatus.error;
+      case MqttConnectionStatus.disconnected:
+        return ConnectionStatus.disconnected;
+    }
+  }
+
+  Widget _buildDeviceSelectorCard(DeviceListState deviceState) {
+    return LegoCard(
+      color: LegoColors.white,
+      studCount: 4,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Target Device',
+                style: LegoTypography.titleMedium.copyWith(
+                  color: LegoColors.black,
+                ),
+              ),
+              GestureDetector(
+                onTap: _goToDeviceManage,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.settings,
+                      size: 16,
+                      color: LegoColors.primary,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Manage',
+                      style: LegoTypography.labelMedium.copyWith(
+                        color: LegoColors.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: LegoSpacing.sm),
+
+          if (deviceState.devices.isEmpty)
+            GestureDetector(
+              onTap: _goToDeviceManage,
+              child: Container(
+                padding: const EdgeInsets.all(LegoSpacing.md),
+                decoration: BoxDecoration(
+                  color: LegoColors.backgroundGray,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: LegoColors.darkGray.withValues(alpha: 0.3),
+                    style: BorderStyle.solid,
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.add_circle_outline,
+                      color: LegoColors.primary,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Add your first device',
+                      style: LegoTypography.bodyMedium.copyWith(
+                        color: LegoColors.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            ...deviceState.devices.asMap().entries.map((entry) {
+              final index = entry.key;
+              final device = entry.value;
+              return DeviceCard(
+                device: device,
+                isSelected: deviceState.selectedIndex == index,
+                onTap: () {
+                  ref.read(deviceListProvider.notifier).selectDevice(index);
+                },
+              );
+            }),
+        ],
+      ),
+    );
+  }
+
   Widget _buildImageSelectionCard(ImageSelectionState imageState) {
     return LegoCard(
       color: LegoColors.white,
@@ -196,9 +348,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             'Select Image',
             style: LegoTypography.titleMedium.copyWith(color: LegoColors.black),
           ),
-          // const SizedBox(height: LegoSpacing.sm),
 
-          // Grid of images
           GridView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -206,7 +356,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               crossAxisCount: 2,
               crossAxisSpacing: LegoSpacing.md,
               mainAxisSpacing: LegoSpacing.md,
-              childAspectRatio: 1, // 改為橫向長方形比例
+              childAspectRatio: 1,
             ),
             itemCount: imageState.availableImages.length,
             itemBuilder: (context, index) {
@@ -223,7 +373,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ref.read(imageSelectionProvider.notifier).selectImage(index);
                 },
                 label: image.isDemo ? 'Demo ${image.slot}' : 'Uploaded',
-                rotateLeft: image.isDemo, // 僅 Demo 圖片需要旋轉，使用者上傳的已處理過
+                rotateLeft: image.isDemo,
               );
             },
           ),
@@ -258,10 +408,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           const SizedBox(height: LegoSpacing.md),
 
           LegoButton(
-            label: 'Reconnect Device',
+            label: 'Reconnect MQTT',
             icon: Icons.refresh,
             type: LegoButtonType.danger,
-            onPressed: _checkConnection,
+            onPressed: _connectMqtt,
           ),
         ],
       ),
@@ -289,7 +439,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
           const SizedBox(height: LegoSpacing.sm),
 
-          // Log entries
           if (logState.entries.isEmpty)
             Text(
               'No activity yet...',

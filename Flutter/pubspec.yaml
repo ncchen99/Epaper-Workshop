@@ -16,8 +16,14 @@ dependencies:
   # HTTP Client
   dio: ^5.7.0
   
-  # mDNS Discovery (Native Android NSD + iOS Bonjour)
-  nsd: ^4.1.0
+  # MQTT Client
+  mqtt_client: ^10.6.0
+  
+  # Local Storage
+  shared_preferences: ^2.3.0
+  
+  # UUID Generation (for MQTT Client ID)
+  uuid: ^4.5.1
   
   # Image Picker (Camera/Gallery)
   image_picker: ^1.1.2

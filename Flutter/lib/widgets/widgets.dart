@@ -7,3 +7,4 @@ export 'lego_status_chip.dart';
 export 'lego_top_bar.dart';
 export 'lego_image_tile.dart';
 export 'lego_bottom_sheet.dart';
+export 'device_card.dart';

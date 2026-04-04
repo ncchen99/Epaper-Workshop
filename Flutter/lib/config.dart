@@ -1,6 +1,6 @@
 /// Application configuration for LEGO E-Paper Controller
 ///
-/// Toggle [mockMode] to switch between mock and real API calls.
+/// MQTT-based multi-device architecture.
 library;
 
 class AppConfig {
@@ -9,25 +9,27 @@ class AppConfig {
   // ===========================================
 
   /// When true, uses mock services instead of real API calls.
-  /// Set to false when ready to connect to real Arduino device.
   static const bool mockMode = false;
 
   // ===========================================
-  // Arduino Device Configuration
+  // MQTT Broker Configuration
   // ===========================================
 
-  /// Primary: Arduino device mDNS hostname
-  /// Works on iOS and most networks
-  static const String arduinoMdnsUrl = 'http://epaper.local';
+  /// MQTT Broker 主機位址
+  /// 第一階段：Desktop 區網 IP（執行 Mosquitto 的電腦）
+  /// 第二階段：改為雲端 Broker 位址
+  static const String mqttBrokerHost = '192.168.1.100';
 
-  /// Fallback: Direct IP address
-  /// Use this when mDNS doesn't work (common on Android)
-  static const String arduinoIpUrl = 'http://10.85.182.1';
+  /// MQTT Broker 連接埠
+  static const int mqttBrokerPort = 1883;
 
-  /// API endpoints
-  static const String apiShow = '/api/show';
-  static const String apiUpdate = '/api/update';
-  static const String apiUpload = '/api/upload'; // Direct upload to Arduino
+  // ===========================================
+  // Cloudflare R2 Configuration
+  // ===========================================
+
+  /// R2 公開存取 URL（ESP32 下載圖片用）
+  static const String r2PublicUrl =
+      'https://REMOVED_R2_PUBLIC_ID.r2.dev';
 
   // ===========================================
   // Image Processing Configuration
@@ -49,9 +51,6 @@ class AppConfig {
   /// Maximum number of log entries to display
   static const int maxLogEntries = 5;
 
-  /// Connection timeout in milliseconds
-  static const int connectionTimeout = 10000;
-
-  /// Request timeout in milliseconds
-  static const int requestTimeout = 30000;
+  /// MQTT connection timeout in seconds
+  static const int mqttConnectTimeout = 10;
 }
