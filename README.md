@@ -29,7 +29,7 @@
 ## 🚀 快速開始
 
 詳細的安裝與設定步驟請參考各目錄下的 `README.md`：
-- [Arduino 設定說明](./Arduino/README.md) (待補充)
+- [Arduino 設定說明](./Arduino/README.md)
 - [Flutter App 設定說明](./Flutter/README.md)
 
 ---

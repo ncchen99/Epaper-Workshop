@@ -1,4 +1,4 @@
-# LEGO E-Ink Camera - Arduino Firmware 🤖
+Yeah.# LEGO E-Ink Camera - Arduino Firmware 🤖
 
 這是電子紙工作坊的硬體端程式碼，基於 ESP32 開發板與 PlatformIO 開發環境。
 
@@ -16,6 +16,53 @@
 1. 安裝 PlatformIO IDE 擴充功能。
 2. 開啟 `Arduino` 資料夾。
 3. 確保 `platformio.ini` 設定正確。
+
+---
+
+### 🍎 Mac 使用者：如何查看與設定串口 (Serial Port)
+
+如果你在上傳時遇到 `Could not open COM18` 錯誤，這是因為 `COM18` 是 Windows 的格式。在 Mac 上請按照以下步驟操作：
+
+1. **查看目前的串口：**
+   在終端機 (Terminal) 輸入以下指令：
+   ```bash
+   ls /dev/cu.*
+   ```
+   你會看到類似 `/dev/cu.usbmodemXXXX` 或 `/dev/cu.usbserial-XXXX` 的路徑。
+
+2. **設定 `platformio.ini`：**
+   將 `platformio.ini` 中的 `upload_port` 修改為上一步找到的路徑。例如：
+   ```ini
+   upload_port = /dev/cu.usbmodemE4B063AFABEC2
+   ```
+   *提示：通常也可以直接把 `upload_port` 這一行註解掉 (前面加 `;`)，讓 PlatformIO 自動偵測。*
+
+3. **權限問題 (選配)：**
+   如果遇到權限錯誤，可以嘗試執行：
+   ```bash
+   sudo chmod 666 /dev/cu.usbmodemXXXX
+   ```
+   (將 `XXXX` 替換為你的裝置 ID)
+
+---
+
+### 🪟 Windows 使用者：如何查看與設定串口 (Serial Port)
+
+如果你在 Windows 上遇到串口不正確的問題，請按照以下步驟：
+
+1. **查看目前的串口：**
+   - 在「開始」選單搜尋並開啟 **裝置管理員 (Device Manager)**。
+   - 展開 **連接埠 (Ports (COM & LPT))**。
+   - 尋找標示為 `USB-Serial`, `CP210x`, 或 `CH340` 的裝置，旁邊括號中的數字即為你的埠號（例如 `COM18`）。
+
+2. **設定 `platformio.ini`：**
+   將 `platformio.ini` 中的 `upload_port` 修改為上一步找到的埠號。例如：
+   ```ini
+   upload_port = COM18
+   ```
+
+---
+
 
 ## 📝 設定 Wi-Fi
 
