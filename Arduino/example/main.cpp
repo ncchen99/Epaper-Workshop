@@ -37,7 +37,7 @@ uint8_t *png_rgb_canvas = (uint8_t *)ps_malloc(EPD_4IN0E_WIDTH * EPD_4IN0E_HEIGH
 
 // ------------------ 常數設定 ------------------
 // 常數不會改變
-const char *ssid = "fatfat";     // 你的WiFi名稱
+const char *ssid = "TMM";     // 你的WiFi名稱
 const char *password = "88888888"; // 你的WiFi密碼
 const char btn1Pin = A1;           // 按鈕接到的腳位編號
 const char btn2Pin = A2;           // 按鈕接到的腳位編號

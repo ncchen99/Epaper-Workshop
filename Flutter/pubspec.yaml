@@ -18,6 +18,9 @@ dependencies:
   
   # MQTT Client
   mqtt_client: ^10.6.0
+
+  # mDNS discovery / .local hostname resolution
+  multicast_dns: ^0.3.3
   
   # Local Storage
   shared_preferences: ^2.3.0

@@ -50,6 +50,8 @@
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_http._tcp</string>
+		<string>_mqtt._tcp</string>
+		<string>_mqtts._tcp</string>
 	</array>
 </dict>
 </plist>

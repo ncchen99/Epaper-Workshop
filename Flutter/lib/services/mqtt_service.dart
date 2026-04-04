@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:multicast_dns/multicast_dns.dart';
 import 'package:mqtt_client/mqtt_client.dart';
 import 'package:mqtt_client/mqtt_server_client.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/models.dart';
+import '../config.dart';
 
 /// MQTT 連線狀態
 enum MqttConnectionStatus {
@@ -50,7 +53,11 @@ class MqttService {
   bool get isConnected => _connectionStatus == MqttConnectionStatus.connected;
 
   /// 連線到 MQTT Broker
-  Future<bool> connect(String brokerHost, {int port = 1883}) async {
+  Future<bool> connect(
+    String brokerHost, {
+    int port = 1883,
+    List<String> fallbackHosts = const [],
+  }) async {
     // 如果已連線，先斷開
     if (_client != null && isConnected) {
       disconnect();
@@ -58,52 +65,76 @@ class MqttService {
 
     _updateStatus(MqttConnectionStatus.connecting);
 
-    try {
-      final clientId = 'flutter_epaper_${const Uuid().v4().substring(0, 8)}';
-
-      _client = MqttServerClient(brokerHost, clientId)
-        ..port = port
-        ..keepAlivePeriod = 30
-        ..autoReconnect = true
-        ..resubscribeOnAutoReconnect = true
-        ..onAutoReconnect = _onAutoReconnect
-        ..onAutoReconnected = _onAutoReconnected
-        ..onConnected = _onConnected
-        ..onDisconnected = _onDisconnected
-        ..logging(on: false)
-        ..setProtocolV311();
-
-      // 設定 Will Message（斷線時通知）
-      final connMsgBuilder = MqttConnectMessage()
-          .withClientIdentifier(clientId)
-          .startClean()
-          .withWillQos(MqttQos.atLeastOnce);
-      _client!.connectionMessage = connMsgBuilder;
-
-      debugPrint('MQTT: Connecting to $brokerHost:$port...');
-
-      await _client!.connect();
-
-      if (_client!.connectionStatus?.state ==
-          MqttConnectionState.connected) {
-        _updateStatus(MqttConnectionStatus.connected);
-        debugPrint('MQTT: Connected successfully');
-
-        // 監聽所有收到的訊息
-        _client!.updates?.listen(_onMessage);
-
-        return true;
-      } else {
-        _lastError = 'Connection failed: ${_client!.connectionStatus}';
-        _updateStatus(MqttConnectionStatus.error);
-        return false;
+    final candidates = <String>[brokerHost];
+    for (final host in fallbackHosts) {
+      if (!candidates.contains(host) && host.trim().isNotEmpty) {
+        candidates.add(host);
       }
-    } catch (e) {
-      _lastError = e.toString();
-      _updateStatus(MqttConnectionStatus.error);
-      debugPrint('MQTT: Connection error: $e');
-      return false;
     }
+
+    String? latestError;
+
+    for (final host in candidates) {
+      final clientId = 'flutter_epaper_${const Uuid().v4().substring(0, 8)}';
+      String resolvedHost = host;
+
+      try {
+        resolvedHost = await _resolveBrokerHost(host);
+
+        _client = MqttServerClient(resolvedHost, clientId)
+          ..port = port
+          ..keepAlivePeriod = 30
+          ..autoReconnect = true
+          ..resubscribeOnAutoReconnect = true
+          ..onAutoReconnect = _onAutoReconnect
+          ..onAutoReconnected = _onAutoReconnected
+          ..onConnected = _onConnected
+          ..onDisconnected = _onDisconnected
+          ..logging(on: false)
+          ..setProtocolV311();
+
+        // 設定 Will Message（斷線時通知）
+        final connMsgBuilder = MqttConnectMessage()
+            .withClientIdentifier(clientId)
+          .startClean();
+        _client!.connectionMessage = connMsgBuilder;
+
+        debugPrint(
+          'MQTT: Attempting candidate $host (resolved: $resolvedHost):$port, clientId: $clientId',
+        );
+
+        await _client!
+            .connect()
+            .timeout(Duration(seconds: AppConfig.mqttConnectTimeoutSeconds));
+
+        if (_client!.connectionStatus?.state == MqttConnectionState.connected) {
+          _updateStatus(MqttConnectionStatus.connected);
+          debugPrint('MQTT: Connected successfully with candidate $host');
+
+          // 監聽所有收到的訊息
+          _client!.updates?.listen(_onMessage);
+          return true;
+        }
+
+        latestError =
+            'Candidate $host failed: ${_client!.connectionStatus?.state} (${_client!.connectionStatus?.returnCode})';
+        debugPrint('MQTT: $latestError');
+      } catch (e, stackTrace) {
+        latestError =
+            'Candidate $host failed (resolved: $resolvedHost): $e';
+        debugPrint('MQTT: Connection error: $latestError');
+        debugPrint('MQTT: StackTrace: $stackTrace');
+      }
+
+      try {
+        _client?.disconnect();
+      } catch (_) {}
+      _client = null;
+    }
+
+    _lastError = latestError ?? 'Connection failed: no candidate succeeded';
+    _updateStatus(MqttConnectionStatus.error);
+    return false;
   }
 
   /// 斷開連線
@@ -156,6 +187,147 @@ class MqttService {
   }
 
   // ---- 私有方法 ----
+
+  Future<String> _resolveBrokerHost(String brokerHost) async {
+    if (!brokerHost.toLowerCase().endsWith('.local')) {
+      return brokerHost;
+    }
+
+    // Android 上 multicast_dns 可能因 reusePort 限制失敗，直接交給系統 resolver。
+    if (Platform.isAndroid) {
+      return _resolveBySystemLookup(brokerHost);
+    }
+
+    final mdns = MDnsClient();
+    try {
+      await mdns.start();
+
+      final ipv4 = mdns
+          .lookup<IPAddressResourceRecord>(
+            ResourceRecordQuery.addressIPv4(brokerHost),
+          )
+          .first
+          .timeout(Duration(seconds: AppConfig.mqttMdnsLookupTimeoutSeconds));
+      try {
+        final record = await ipv4;
+        final ip = record.address.address;
+        debugPrint('MQTT: mDNS resolved $brokerHost -> $ip');
+        return ip;
+      } on TimeoutException {
+        debugPrint('MQTT: mDNS IPv4 lookup timeout for $brokerHost');
+      } on StateError {
+        debugPrint('MQTT: mDNS IPv4 no answer for $brokerHost');
+      }
+
+      final ipv6 = mdns
+          .lookup<IPAddressResourceRecord>(
+            ResourceRecordQuery.addressIPv6(brokerHost),
+          )
+          .first
+          .timeout(Duration(seconds: AppConfig.mqttMdnsLookupTimeoutSeconds));
+      try {
+        final record = await ipv6;
+        final ip = record.address.address;
+        debugPrint('MQTT: mDNS resolved $brokerHost -> $ip');
+        return ip;
+      } on TimeoutException {
+        debugPrint('MQTT: mDNS IPv6 lookup timeout for $brokerHost');
+      } on StateError {
+        debugPrint('MQTT: mDNS IPv6 no answer for $brokerHost');
+      }
+
+      final fallback = await _resolveBySystemLookup(brokerHost);
+      if (fallback != brokerHost) {
+        return fallback;
+      }
+
+      debugPrint(
+        'MQTT: mDNS lookup had no answer for $brokerHost, fallback to hostname',
+      );
+      return brokerHost;
+    } on SocketException catch (e) {
+      debugPrint('MQTT: mDNS lookup failed: $e');
+      return _resolveBySystemLookup(brokerHost);
+    } finally {
+      mdns.stop();
+    }
+  }
+
+  Future<String> _resolveBySystemLookup(String brokerHost) async {
+    try {
+      final lookup = await InternetAddress.lookup(
+        brokerHost,
+      ).timeout(Duration(seconds: AppConfig.mqttMdnsLookupTimeoutSeconds));
+      if (lookup.isEmpty) {
+        return brokerHost;
+      }
+
+      final sorted = _prioritizeAddresses(lookup);
+      final selected =
+          sorted.where((a) => !_isLoopbackOrLinkLocal(a)).cast<InternetAddress>().firstWhere(
+            (_) => true,
+            orElse: () => sorted.first,
+          );
+
+      debugPrint(
+        'MQTT: DNS fallback resolved $brokerHost -> ${selected.address} (candidates: ${sorted.map((a) => a.address).join(', ')})',
+      );
+      return selected.address;
+    } on TimeoutException {
+      debugPrint('MQTT: DNS fallback timeout for $brokerHost');
+      return brokerHost;
+    } catch (e) {
+      debugPrint('MQTT: DNS fallback failed for $brokerHost: $e');
+      return brokerHost;
+    }
+  }
+
+  List<InternetAddress> _prioritizeAddresses(List<InternetAddress> addresses) {
+    final unique = <String, InternetAddress>{};
+    for (final address in addresses) {
+      unique[address.address] = address;
+    }
+
+    final result = unique.values.toList();
+    result.sort((a, b) => _addressPriority(a).compareTo(_addressPriority(b)));
+    return result;
+  }
+
+  int _addressPriority(InternetAddress address) {
+    if (address.isLoopback) {
+      return 300;
+    }
+    if (_isLinkLocal(address)) {
+      return 200;
+    }
+    if (address.type == InternetAddressType.IPv4) {
+      return 0;
+    }
+    if (address.type == InternetAddressType.IPv6) {
+      return 100;
+    }
+    return 150;
+  }
+
+  bool _isLoopbackOrLinkLocal(InternetAddress address) {
+    return address.isLoopback || _isLinkLocal(address);
+  }
+
+  bool _isLinkLocal(InternetAddress address) {
+    final raw = address.rawAddress;
+
+    if (address.type == InternetAddressType.IPv4 && raw.length == 4) {
+      // IPv4 link-local: 169.254.0.0/16
+      return raw[0] == 169 && raw[1] == 254;
+    }
+
+    if (address.type == InternetAddressType.IPv6 && raw.length == 16) {
+      // IPv6 link-local: fe80::/10
+      return raw[0] == 0xfe && (raw[1] & 0xc0) == 0x80;
+    }
+
+    return false;
+  }
 
   void _updateStatus(MqttConnectionStatus status) {
     _connectionStatus = status;

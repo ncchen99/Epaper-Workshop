@@ -16,12 +16,43 @@ class AppConfig {
   // ===========================================
 
   /// MQTT Broker 主機位址
-  /// 第一階段：Desktop 區網 IP（執行 Mosquitto 的電腦）
-  /// 第二階段：改為雲端 Broker 位址
-  static const String mqttBrokerHost = '192.168.1.100';
+  /// 使用 mDNS hostname，避免硬編碼 IP。
+  static const String mqttBrokerHost = 'epaper-broker.local';
+
+  /// 備援 Broker 主機（可用 --dart-define 設定）
+  /// 範例：--dart-define=MQTT_BROKER_FALLBACK_HOST=192.168.1.100
+  static const String mqttBrokerFallbackHost = String.fromEnvironment(
+    'MQTT_BROKER_FALLBACK_HOST',
+    defaultValue: '',
+  );
 
   /// MQTT Broker 連接埠
   static const int mqttBrokerPort = 1883;
+
+  /// MQTT 連線逾時秒數
+  static const int mqttConnectTimeoutSeconds = 10;
+
+  /// mDNS 解析逾時秒數
+  static const int mqttMdnsLookupTimeoutSeconds = 3;
+
+  /// 依序嘗試的 Broker 主機清單（主機名 + 可選備援）
+  static List<String> mqttBrokerCandidates() {
+    final candidates = <String>[mqttBrokerHost];
+
+    // 使用 127.0.0.1 (確定的 IPv4) 避開模擬器上 localhost 可能解析為 IPv6 (::1) 的問題。
+    if (!candidates.contains('127.0.0.1')) {
+      candidates.add('127.0.0.1');
+    }
+    if (!candidates.contains('10.0.2.2')) {
+      candidates.add('10.0.2.2');
+    }
+
+    if (mqttBrokerFallbackHost.isNotEmpty &&
+        !candidates.contains(mqttBrokerFallbackHost)) {
+      candidates.add(mqttBrokerFallbackHost);
+    }
+    return candidates;
+  }
 
   // ===========================================
   // Cloudflare R2 Configuration

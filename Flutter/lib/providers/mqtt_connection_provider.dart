@@ -53,14 +53,22 @@ class MqttConnectionNotifier extends StateNotifier<MqttConnectionState> {
   }
 
   /// 連線到 MQTT Broker
-  Future<bool> connect(String host, {int port = 1883}) async {
+  Future<bool> connect(
+    String host, {
+    int port = 1883,
+    List<String> fallbackHosts = const [],
+  }) async {
     state = state.copyWith(
       status: MqttConnectionStatus.connecting,
       brokerHost: host,
       brokerPort: port,
     );
 
-    final success = await _mqttService.connect(host, port: port);
+    final success = await _mqttService.connect(
+      host,
+      port: port,
+      fallbackHosts: fallbackHosts,
+    );
 
     if (!success) {
       state = state.copyWith(

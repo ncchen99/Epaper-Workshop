@@ -172,3 +172,66 @@ netstat -an | findstr 1883  # Windows
 2. 確認防火牆已開放 Port 1883
 3. 確認使用的 IP 正確（不是 127.0.0.1）
 4. 使用 `mosquitto_sub` 在本機測試確認 Broker 正常運作
+
+---
+
+## 2026-04-04 事件紀錄：Flutter 無法透過 mDNS 連上 Broker
+
+### 症狀
+
+- Flutter 設定 Broker 為 `epaper-broker.local`，但 App 連線失敗。
+- 本機測試顯示：
+	- `ping epaper-broker.local` 無法解析（Unknown host）
+	- `nc -vz epaper-broker.local 1883` 出現 `getaddrinfo` 錯誤
+
+### 根因
+
+- macOS 的 `LocalHostName` 不是 `epaper-broker`，因此 `epaper-broker.local` 並未在 Bonjour/mDNS 正確廣播。
+- App 端使用 `.local` 主機名時，DNS 解析層先失敗，導致 MQTT 連線失敗。
+
+### 修復步驟（macOS Broker 主機）
+
+1. 設定本機 mDNS 主機名：
+
+```bash
+scutil --set LocalHostName epaper-broker
+```
+
+2. 驗證主機名已套用：
+
+```bash
+scutil --get LocalHostName
+```
+
+3. 驗證 mDNS 解析：
+
+```bash
+dns-sd -G v4v6 epaper-broker.local
+```
+
+4. 驗證 MQTT 埠可達：
+
+```bash
+nc -vz -G 2 epaper-broker.local 1883
+```
+
+### 修復後驗證結果
+
+- `epaper-broker.local` 可解析到區網位址（本次為 `172.20.10.9`）。
+- `nc` 對 `1883` 最終可連通（可能先看到 IPv6 refused，再由 IPv4 成功，屬常見情況）。
+
+### Flutter 端已做的保護（避免單點失敗）
+
+- 已加入 mDNS 解析 timeout 與 DNS fallback。
+- 已加入 Broker 候選位址機制（主 mDNS + 可選 fallback host）。
+- 可在執行時指定 fallback：
+
+```bash
+flutter run --dart-define=MQTT_BROKER_FALLBACK_HOST=192.168.x.x
+```
+
+### 預防建議
+
+1. 每次工作坊開始前，先執行一次 `dns-sd -G v4v6 epaper-broker.local`。
+2. 若 mDNS 不穩，現場先用 `--dart-define=MQTT_BROKER_FALLBACK_HOST=...` 保障可用性。
+3. 若要跨平台（特別是 Windows）穩定使用 `.local`，需確認 Bonjour 服務已安裝且可運作。

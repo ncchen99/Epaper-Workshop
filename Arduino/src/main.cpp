@@ -14,6 +14,7 @@
 #include <Adafruit_NeoPixel.h>
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <ESPmDNS.h>
 #include <HTTPClient.h>
 #include <JPEGDEC.h>
 #include <LittleFS.h>
@@ -35,12 +36,12 @@
 #define BTN_PIN D9 // 數位按鈕（3-pin: VCC, GND, OUT）
 
 // ======== Wi-Fi 設定 ========
-const char *ssid = "fatfat";
+const char *ssid = "TMM";
 const char *password = "88888888";
 
 // ======== MQTT 設定 ========
-// 請修改為你的 Desktop 區網 IP（執行 Mosquitto Broker 的電腦）
-const char *MQTT_BROKER = "192.168.1.100";
+// 使用 mDNS host 連線 Desktop Mosquitto（IP 變動也可自動追蹤）
+const char *MQTT_BROKER_HOSTNAME = "epaper-broker.local";
 const int MQTT_PORT = 1883;
 
 // ======== 全域變數 ========
@@ -60,6 +61,8 @@ String deviceMac = "";       // e.g., "AABBCC112233"
 String cmdTopic = "";        // e.g., "devices/AABBCC112233/cmd"
 String stateTopic = "";      // e.g., "devices/AABBCC112233/state"
 String mqttClientId = "";    // MQTT client ID
+IPAddress mqttBrokerIp;       // 解析後的 Broker IP
+bool mqttBrokerResolved = false;
 
 // 處理狀態
 volatile bool isProcessing = false;
@@ -79,6 +82,7 @@ int lastDisplayedSlot = 1;
 // ======== 函式前向宣告 ========
 void LED(uint16_t N, uint16_t H, uint8_t S, uint8_t B);
 void mqttCallback(char *topic, byte *payload, unsigned int length);
+bool resolveMqttBroker();
 void mqttReconnect();
 void publishState(const char *status, const char *message = nullptr);
 void download_PNG_Url(String _url, String _target);
@@ -182,9 +186,52 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
 }
 
 // ======================== MQTT 連線管理 ========================
+bool resolveMqttBroker() {
+  IPAddress resolvedIp;
+
+  // 先走系統 DNS（在支援 mDNS 的環境可直接解析 *.local）
+  if (WiFi.hostByName(MQTT_BROKER_HOSTNAME, resolvedIp)) {
+    mqttBrokerIp = resolvedIp;
+    mqttBrokerResolved = true;
+    Serial.printf("Broker 解析成功: %s -> %s\n", MQTT_BROKER_HOSTNAME,
+                  mqttBrokerIp.toString().c_str());
+    return true;
+  }
+
+  // 再嘗試透過 ESPmDNS 主動查詢
+  String hostNoLocal = MQTT_BROKER_HOSTNAME;
+  hostNoLocal.replace(".local", "");
+  int answers = MDNS.queryHost(hostNoLocal.c_str(), 2000);
+  if (answers > 0) {
+    mqttBrokerIp = MDNS.IP(0);
+    mqttBrokerResolved = true;
+    Serial.printf("Broker mDNS 查詢成功: %s -> %s\n", MQTT_BROKER_HOSTNAME,
+                  mqttBrokerIp.toString().c_str());
+    return true;
+  }
+
+  mqttBrokerResolved = false;
+  Serial.printf("Broker 解析失敗: %s\n", MQTT_BROKER_HOSTNAME);
+  return false;
+}
+
 void mqttReconnect() {
   while (!mqttClient.connected()) {
-    Serial.printf("連線 MQTT Broker (%s:%d)...\n", MQTT_BROKER, MQTT_PORT);
+    if (!resolveMqttBroker()) {
+      Serial.println("5 秒後重試解析 Broker...");
+
+      LED(0, 0, 255, BRIGHTNESS);
+      LED(1, 0, 255, BRIGHTNESS);
+      LED(2, 0, 255, BRIGHTNESS);
+
+      delay(5000);
+      continue;
+    }
+
+    mqttClient.setServer(mqttBrokerIp, MQTT_PORT);
+
+    Serial.printf("連線 MQTT Broker (%s -> %s:%d)...\n", MQTT_BROKER_HOSTNAME,
+                  mqttBrokerIp.toString().c_str(), MQTT_PORT);
 
     // LED 閃爍表示正在連線
     LED(0, 48, 255, BRIGHTNESS);
@@ -785,8 +832,15 @@ void setup() {
   Serial.println("CMD Topic:   " + cmdTopic);
   Serial.println("State Topic: " + stateTopic);
 
+  // ---- 初始化 mDNS（供主動查詢 .local 主機）----
+  String mdnsHost = "epaper-" + deviceMac.substring(deviceMac.length() - 6);
+  if (MDNS.begin(mdnsHost.c_str())) {
+    Serial.printf("mDNS responder 已啟用: %s.local\n", mdnsHost.c_str());
+  } else {
+    Serial.println("mDNS responder 啟用失敗，仍會嘗試一般 DNS 解析");
+  }
+
   // ---- MQTT 設定 ----
-  mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
   mqttClient.setCallback(mqttCallback);
   mqttClient.setBufferSize(1024); // 預設 256 太小，需加大以容納 JSON
 
@@ -839,7 +893,10 @@ void setup() {
 
   Serial.println("Setup 完成！");
   Serial.println("等待 MQTT 指令...");
-  Serial.printf("  - Broker: %s:%d\n", MQTT_BROKER, MQTT_PORT);
+  Serial.printf("  - Broker: %s:%d\n", MQTT_BROKER_HOSTNAME, MQTT_PORT);
+  if (mqttBrokerResolved) {
+    Serial.printf("  - Resolved IP: %s\n", mqttBrokerIp.toString().c_str());
+  }
   Serial.printf("  - 訂閱:   %s\n", cmdTopic.c_str());
   Serial.printf("  - 回報:   %s\n", stateTopic.c_str());
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart' as picker;
+import 'dart:async';
 import 'dart:io';
 
 import '../config.dart';
@@ -26,16 +27,19 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> {
+class _HomeScreenState extends ConsumerState<HomeScreen>
+  with WidgetsBindingObserver {
   final ImagePicker _imagePicker = ImagePicker();
   final R2UploadService _r2Service = R2UploadService();
   final ImageProcessorService _imageProcessor = ImageProcessorService();
+  StreamSubscription<DeviceStateMessage>? _stateSub;
 
   bool _isSending = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // 啟動後自動連線 MQTT
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _connectMqtt();
@@ -48,6 +52,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final success = await ref.read(mqttConnectionProvider.notifier).connect(
       AppConfig.mqttBrokerHost,
       port: AppConfig.mqttBrokerPort,
+      fallbackHosts: AppConfig.mqttBrokerCandidates().skip(1).toList(),
     );
 
     if (success) {
@@ -55,7 +60,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
       // 監聽裝置狀態訊息
       final mqttService = ref.read(mqttServiceProvider);
-      mqttService.stateMessageStream.listen((stateMsg) {
+      _stateSub?.cancel();
+      _stateSub = mqttService.stateMessageStream.listen((stateMsg) {
         final statusText = '${stateMsg.mac}: ${stateMsg.status}';
         if (stateMsg.isSuccess) {
           ref.read(logProvider.notifier).success(statusText);
@@ -68,6 +74,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     } else {
       final error = ref.read(mqttConnectionProvider).errorMessage;
       ref.read(logProvider.notifier).error('MQTT Failed: $error');
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      final mqttState = ref.read(mqttConnectionProvider);
+      if (!mqttState.isConnected && !mqttState.isConnecting) {
+        _connectMqtt();
+      }
     }
   }
 
@@ -185,6 +201,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _stateSub?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final mqttState = ref.watch(mqttConnectionProvider);
     final deviceState = ref.watch(deviceListProvider);
@@ -258,12 +281,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Target Device',
-                style: LegoTypography.titleMedium.copyWith(
-                  color: LegoColors.black,
+              Flexible(
+                child: Text(
+                  'Target Device',
+                  style: LegoTypography.titleMedium.copyWith(
+                    color: LegoColors.black,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
+              const SizedBox(width: LegoSpacing.sm),
               GestureDetector(
                 onTap: _goToDeviceManage,
                 child: Row(
@@ -275,10 +302,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       color: LegoColors.primary,
                     ),
                     const SizedBox(width: 4),
-                    Text(
-                      'Manage',
-                      style: LegoTypography.labelMedium.copyWith(
-                        color: LegoColors.primary,
+                    Flexible(
+                      child: Text(
+                        'Manage',
+                        style: LegoTypography.labelMedium.copyWith(
+                          color: LegoColors.primary,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],
@@ -310,10 +340,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       size: 20,
                     ),
                     const SizedBox(width: 8),
-                    Text(
-                      'Add your first device',
-                      style: LegoTypography.bodyMedium.copyWith(
-                        color: LegoColors.primary,
+                    Flexible(
+                      child: Text(
+                        'Add your first device',
+                        style: LegoTypography.bodyMedium.copyWith(
+                          color: LegoColors.primary,
+                        ),
                       ),
                     ),
                   ],
