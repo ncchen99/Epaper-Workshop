@@ -81,6 +81,9 @@ mosquitto.exe -c mosquitto.conf -v
 # 前景執行
 mosquitto -c /etc/mosquitto/mosquitto.conf -v
 
+# 2026-04-05 測試
+mosquitto -c /Users/ncchen/Downloads/Epaper-Workshop/broker_setup/mosquitto.conf -v
+
 # 或使用 systemd
 sudo systemctl start mosquitto
 sudo systemctl enable mosquitto

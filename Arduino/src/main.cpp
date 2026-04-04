@@ -57,11 +57,11 @@ uint8_t *png_rgb_canvas =
 // MQTT
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
-String deviceMac = "";       // e.g., "AABBCC112233"
-String cmdTopic = "";        // e.g., "devices/AABBCC112233/cmd"
-String stateTopic = "";      // e.g., "devices/AABBCC112233/state"
-String mqttClientId = "";    // MQTT client ID
-IPAddress mqttBrokerIp;       // 解析後的 Broker IP
+String deviceMac = "";    // e.g., "AABBCC112233"
+String cmdTopic = "";     // e.g., "devices/AABBCC112233/cmd"
+String stateTopic = "";   // e.g., "devices/AABBCC112233/state"
+String mqttClientId = ""; // MQTT client ID
+IPAddress mqttBrokerIp;   // 解析後的 Broker IP
 bool mqttBrokerResolved = false;
 
 // 處理狀態
@@ -110,7 +110,8 @@ String getMacAddress() {
 
 // ======================== MQTT 狀態回報 ========================
 void publishState(const char *status, const char *message) {
-  if (!mqttClient.connected()) return;
+  if (!mqttClient.connected())
+    return;
 
   JsonDocument doc;
   doc["mac"] = deviceMac;
@@ -255,7 +256,7 @@ void mqttReconnect() {
       LED(2, 64, 255, BRIGHTNESS);
     } else {
       Serial.printf("MQTT 連線失敗，rc=%d，5 秒後重試...\n",
-                     mqttClient.state());
+                    mqttClient.state());
 
       // LED 顯示連線失敗
       LED(0, 0, 255, BRIGHTNESS);
@@ -391,7 +392,8 @@ static void packRgbToEpd() {
       packedPixelCount++;
     }
 
-    if (i % 50000 == 0) delay(1);
+    if (i % 50000 == 0)
+      delay(1);
   }
 }
 
@@ -720,7 +722,7 @@ bool showImage(int slot) {
 void updateImageFromUrl(const String &url, int slot) {
   Serial.printf("更新圖片 Slot %d\n", slot);
   Serial.println("URL: " + url);
-  
+
   isProcessing = true;
   publishState("downloading", "Downloading image...");
 
@@ -729,8 +731,7 @@ void updateImageFromUrl(const String &url, int slot) {
   // 判斷副檔名
   String lowerUrl = url;
   lowerUrl.toLowerCase();
-  bool isJpeg =
-      lowerUrl.endsWith(".jpg") || lowerUrl.endsWith(".jpeg");
+  bool isJpeg = lowerUrl.endsWith(".jpg") || lowerUrl.endsWith(".jpeg");
   String tempFile = isJpeg ? "/temp.jpg" : "/temp.png";
 
   // 下載圖片
@@ -781,7 +782,7 @@ void updateImageFromUrl(const String &url, int slot) {
 void displayMacOnEPaper() {
   // 在 E-Paper 上用簡單文字顯示 MAC Address
   // 使用黑底白字，讓使用者可以在 App 中輸入 MAC 進行綁定
-  
+
   // 清空畫布為白色
   memset(epd_bitmap_canvas, 0x11, EPD_WIDTH * EPD_HEIGHT / 2);
   // 0x11 = 兩個像素都是 WHITE (color code 1)
@@ -789,7 +790,7 @@ void displayMacOnEPaper() {
   // 注意：由於 EPD 沒有內建字型渲染，這裡改為在 Serial 輸出 MAC
   // 使用者可以從 Serial Monitor 讀取 MAC Address
   // 未來可加入 QR Code 或字型渲染來在螢幕上顯示
-  
+
   Serial.println("===========================================");
   Serial.println("  裝置 MAC Address: " + deviceMac);
   Serial.println("  MQTT cmd Topic:   " + cmdTopic);
