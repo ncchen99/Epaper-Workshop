@@ -20,6 +20,9 @@ class MqttService {
   MqttServerClient? _client;
   MqttConnectionStatus _connectionStatus = MqttConnectionStatus.disconnected;
   String? _lastError;
+  StreamSubscription<List<MqttReceivedMessage<MqttMessage?>>>?
+  _updatesSubscription;
+  bool _isDisposed = false;
 
   // Stream controllers
   final _connectionController =
@@ -53,6 +56,11 @@ class MqttService {
     int port = 1883,
     List<String> fallbackHosts = const [],
   }) async {
+    if (_isDisposed) {
+      _lastError = 'MQTT service disposed';
+      return false;
+    }
+
     // 如果已連線，先斷開
     if (_client != null && isConnected) {
       disconnect();
@@ -107,7 +115,8 @@ class MqttService {
           debugPrint('MQTT: Connected successfully with candidate $host');
 
           // 監聽所有收到的訊息
-          _client!.updates?.listen(_onMessage);
+          await _updatesSubscription?.cancel();
+          _updatesSubscription = _client!.updates?.listen(_onMessage);
           return true;
         }
 
@@ -134,6 +143,8 @@ class MqttService {
   /// 斷開連線
   void disconnect() {
     _subscribedTopics.clear();
+    _updatesSubscription?.cancel();
+    _updatesSubscription = null;
     _client?.disconnect();
     _client = null;
     _updateStatus(MqttConnectionStatus.disconnected);
@@ -323,6 +334,7 @@ class MqttService {
   }
 
   void _updateStatus(MqttConnectionStatus status) {
+    if (_isDisposed || _connectionController.isClosed) return;
     _connectionStatus = status;
     _connectionController.add(status);
   }
@@ -350,6 +362,8 @@ class MqttService {
   }
 
   void _onMessage(List<MqttReceivedMessage<MqttMessage?>> messages) {
+    if (_isDisposed || _stateMessageController.isClosed) return;
+
     for (final message in messages) {
       final topic = message.topic;
       final pubMessage = message.payload as MqttPublishMessage;
@@ -367,7 +381,9 @@ class MqttService {
             payload,
             fallbackMac: topicMac,
           );
-          _stateMessageController.add(stateMsg);
+          if (!_isDisposed && !_stateMessageController.isClosed) {
+            _stateMessageController.add(stateMsg);
+          }
         } catch (e) {
           debugPrint('MQTT: Failed to parse state message: $e');
         }
@@ -385,8 +401,23 @@ class MqttService {
 
   /// 釋放資源
   void dispose() {
-    disconnect();
-    _connectionController.close();
-    _stateMessageController.close();
+    if (_isDisposed) return;
+    _isDisposed = true;
+
+    _subscribedTopics.clear();
+    _updatesSubscription?.cancel();
+    _updatesSubscription = null;
+
+    try {
+      _client?.disconnect();
+    } catch (_) {}
+    _client = null;
+
+    if (!_connectionController.isClosed) {
+      _connectionController.close();
+    }
+    if (!_stateMessageController.isClosed) {
+      _stateMessageController.close();
+    }
   }
 }

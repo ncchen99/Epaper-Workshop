@@ -52,8 +52,10 @@ class DeviceListNotifier extends StateNotifier<DeviceListState> {
 
   /// 從本地載入裝置
   Future<void> _loadDevices() async {
+    if (!mounted) return;
     state = state.copyWith(isLoading: true);
     final devices = await _storageService.loadDevices();
+    if (!mounted) return;
     state = state.copyWith(
       devices: devices,
       isLoading: false,
@@ -69,6 +71,7 @@ class DeviceListNotifier extends StateNotifier<DeviceListState> {
   /// 監聽裝置狀態訊息
   void _listenToStateMessages() {
     _stateSubscription = _mqttService.stateMessageStream.listen((stateMsg) {
+      if (!mounted) return;
       // 找到對應的裝置並更新狀態
       final devices = List<EpaperDevice>.from(state.devices);
       final messageMac = EpaperDevice.normalizeMac(stateMsg.mac);
@@ -85,6 +88,7 @@ class DeviceListNotifier extends StateNotifier<DeviceListState> {
 
   /// 新增裝置
   Future<void> addDevice(String macAddress, {String? nickname}) async {
+    if (!mounted) return;
     // 標準化 MAC（移除冒號、轉大寫）
     final normalizedMac =
         macAddress.replaceAll(':', '').replaceAll('-', '').toUpperCase();
@@ -98,6 +102,7 @@ class DeviceListNotifier extends StateNotifier<DeviceListState> {
     final device = EpaperDevice(macAddress: normalizedMac, nickname: nickname);
 
     await _storageService.saveDevice(device);
+    if (!mounted) return;
 
     final updatedDevices = [...state.devices, device];
     state = state.copyWith(
@@ -114,6 +119,7 @@ class DeviceListNotifier extends StateNotifier<DeviceListState> {
   /// 移除裝置
   Future<void> removeDevice(String macAddress) async {
     await _storageService.removeDevice(macAddress);
+    if (!mounted) return;
 
     _mqttService.unsubscribeFromDeviceState(macAddress);
 
@@ -145,6 +151,7 @@ class DeviceListNotifier extends StateNotifier<DeviceListState> {
 
   /// 重新載入裝置列表
   Future<void> reload() async {
+    if (!mounted) return;
     await _loadDevices();
   }
 

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../services/mqtt_service.dart';
@@ -37,11 +39,13 @@ class MqttConnectionState {
 /// MQTT 連線管理 Notifier
 class MqttConnectionNotifier extends StateNotifier<MqttConnectionState> {
   final MqttService _mqttService;
+  StreamSubscription<MqttConnectionStatus>? _connectionSubscription;
 
   MqttConnectionNotifier(this._mqttService)
     : super(const MqttConnectionState()) {
     // 監聽連線狀態變化
-    _mqttService.connectionStream.listen((status) {
+    _connectionSubscription = _mqttService.connectionStream.listen((status) {
+      if (!mounted) return;
       state = state.copyWith(
         status: status,
         errorMessage:
@@ -52,12 +56,19 @@ class MqttConnectionNotifier extends StateNotifier<MqttConnectionState> {
     });
   }
 
+  @override
+  void dispose() {
+    _connectionSubscription?.cancel();
+    super.dispose();
+  }
+
   /// 連線到 MQTT Broker
   Future<bool> connect(
     String host, {
     int port = 1883,
     List<String> fallbackHosts = const [],
   }) async {
+    if (!mounted) return false;
     state = state.copyWith(
       status: MqttConnectionStatus.connecting,
       brokerHost: host,
@@ -69,6 +80,8 @@ class MqttConnectionNotifier extends StateNotifier<MqttConnectionState> {
       port: port,
       fallbackHosts: fallbackHosts,
     );
+
+    if (!mounted) return false;
 
     if (!success) {
       state = state.copyWith(

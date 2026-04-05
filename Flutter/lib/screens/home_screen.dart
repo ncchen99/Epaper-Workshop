@@ -57,6 +57,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           fallbackHosts: AppConfig.mqttBrokerCandidates().skip(1).toList(),
         );
 
+    if (!mounted) return;
+
     if (success) {
       ref.read(logProvider.notifier).success('MQTT Connected!');
 
@@ -64,6 +66,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       final mqttService = ref.read(mqttServiceProvider);
       _stateSub?.cancel();
       _stateSub = mqttService.stateMessageStream.listen((stateMsg) {
+        if (!mounted) return;
         final deviceName = _resolveDeviceNameByMac(stateMsg.mac);
         final details = stateMsg.message?.trim();
         final statusText =
@@ -117,6 +120,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       return;
     }
 
+    if (!mounted) return;
     setState(() => _isSending = true);
     ref.read(logProvider.notifier).info('Processing image...');
 
@@ -133,6 +137,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         final processResult = await _imageProcessor.processImage(
           selectedImage.file!,
         );
+        if (!mounted) return;
         if (!processResult.success || processResult.processedFile == null) {
           throw Exception(processResult.error ?? 'Image processing failed');
         }
@@ -147,6 +152,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           processResult.processedFile!,
           filename,
         );
+        if (!mounted) return;
 
         ref.read(logProvider.notifier).info('Sending MQTT command...');
 
@@ -156,6 +162,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           slot: selectedImage.slot ?? 1,
         );
         await mqttService.publishCommand(targetDevice.macAddress, cmd);
+        if (!mounted) return;
 
         // 清理暫存檔
         try {
@@ -170,18 +177,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         ref.read(logProvider.notifier).info('Sending show command...');
         final cmd = MqttCommand.show(slot: selectedImage.slot ?? 1);
         await mqttService.publishCommand(targetDevice.macAddress, cmd);
+        if (!mounted) return;
         ref.read(logProvider.notifier).success('Show command sent!');
       }
     } catch (e) {
+      if (!mounted) return;
       ref.read(logProvider.notifier).error('Failed: $e');
     } finally {
-      setState(() => _isSending = false);
+      if (mounted) {
+        setState(() => _isSending = false);
+      }
     }
   }
 
   Future<void> _uploadPhoto() async {
     final source = await LegoBottomSheet.show(context);
-    if (source == null) return;
+    if (!mounted || source == null) return;
 
     try {
       final pickerSource =
@@ -190,6 +201,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               : picker.ImageSource.gallery;
 
       final pickedFile = await _imagePicker.pickImage(source: pickerSource);
+
+      if (!mounted) return;
 
       if (pickedFile != null) {
         final file = File(pickedFile.path);
@@ -200,6 +213,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             .success('Photo ready! Tap "Send" to upload.');
       }
     } catch (e) {
+      if (!mounted) return;
       ref.read(logProvider.notifier).error('Failed to pick image: $e');
     }
   }

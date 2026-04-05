@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -7,8 +10,28 @@ import 'screens/home_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+    debugPrint('FlutterError: ${details.exceptionAsString()}');
+    debugPrint('FlutterError stack: ${details.stack}');
+  };
+
+  PlatformDispatcher.instance.onError = (error, stack) {
+    debugPrint('PlatformDispatcher error: $error');
+    debugPrint('PlatformDispatcher stack: $stack');
+    return true;
+  };
+
   await dotenv.load(fileName: '.env');
-  runApp(const ProviderScope(child: LegoEPaperApp()));
+
+  runZonedGuarded(() => runApp(const ProviderScope(child: LegoEPaperApp())), (
+    error,
+    stack,
+  ) {
+    debugPrint('runZonedGuarded error: $error');
+    debugPrint('runZonedGuarded stack: $stack');
+  });
 }
 
 /// Main application widget

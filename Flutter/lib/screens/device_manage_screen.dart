@@ -41,10 +41,11 @@ class _DeviceManageScreenState extends ConsumerState<DeviceManageScreen> {
             ? null
             : _nicknameController.text.trim();
 
-    await ref.read(deviceListProvider.notifier).addDevice(
-      mac,
-      nickname: nickname,
-    );
+    await ref
+        .read(deviceListProvider.notifier)
+        .addDevice(mac, nickname: nickname);
+
+    if (!mounted) return;
 
     _macController.clear();
     _nicknameController.clear();
@@ -63,22 +64,25 @@ class _DeviceManageScreenState extends ConsumerState<DeviceManageScreen> {
   Future<void> _removeDevice(EpaperDevice device) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('移除裝置'),
-        content: Text('確定要移除 ${device.displayName}？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('移除裝置'),
+            content: Text('確定要移除 ${device.displayName}？'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('取消'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: TextButton.styleFrom(foregroundColor: LegoColors.error),
+                child: const Text('移除'),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: LegoColors.error),
-            child: const Text('移除'),
-          ),
-        ],
-      ),
     );
+
+    if (!mounted) return;
 
     if (confirmed == true) {
       await ref
@@ -88,9 +92,9 @@ class _DeviceManageScreenState extends ConsumerState<DeviceManageScreen> {
   }
 
   Future<void> _scanQrCode() async {
-    final scannedMac = await Navigator.of(context).push<String>(
-      MaterialPageRoute(builder: (_) => const QrScannerScreen()),
-    );
+    final scannedMac = await Navigator.of(
+      context,
+    ).push<String>(MaterialPageRoute(builder: (_) => const QrScannerScreen()));
 
     if (!mounted || scannedMac == null || scannedMac.isEmpty) return;
 
