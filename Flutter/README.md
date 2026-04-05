@@ -1,4 +1,4 @@
-# LEGO E-Ink Camera Workshop - Flutter App
+# InkSync - Flutter App
 
 這個 App 用來控制 ESP32 電子紙裝置。
 

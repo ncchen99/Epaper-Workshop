@@ -1,6 +1,6 @@
-# LEGO E-Ink Camera Workshop
+# InkSync
 
-這是一個整合 Arduino (ESP32-S3) 與 Flutter 的電子紙工作坊專案。
+分散式多裝置 E-Paper 控制系統
 
 目前主線版本已全面採用 MQTT 架構：
 - Arduino 是 MQTT Client，接收裝置專屬 Topic 指令。

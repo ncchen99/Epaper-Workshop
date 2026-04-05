@@ -1,6 +1,6 @@
 # MQTT Broker 部署指南（Mosquitto）
 
-本文件說明如何在桌機（macOS / Windows / Linux）安裝與啟動 Mosquitto，供 E-Paper Workshop 使用。
+本文件說明如何在桌機（macOS / Windows / Linux）安裝與啟動 Mosquitto，供 InkSync 使用。
 
 ## 前置需求
 

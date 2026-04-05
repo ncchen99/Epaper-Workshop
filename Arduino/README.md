@@ -1,4 +1,4 @@
-# LEGO E-Ink Camera - Arduino Firmware
+# InkSync - Arduino Firmware
 
 本資料夾為 ESP32-S3 韌體，使用 MQTT 接收指令並控制 4.03 吋 7 色電子紙。
 
