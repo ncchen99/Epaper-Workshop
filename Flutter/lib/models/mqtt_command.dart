@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'epaper_device.dart';
+
 /// Flutter → ESP32 的 MQTT 指令
 class MqttCommand {
   final String action; // "update" | "show" | "clear"
@@ -35,7 +37,8 @@ class MqttCommand {
 /// ESP32 → Flutter 的狀態回報訊息
 class DeviceStateMessage {
   final String mac; // 裝置 MAC
-  final String status; // "online" | "downloading" | "decoding" | "displaying" | "success" | "error" | "busy"
+  final String
+  status; // "online" | "downloading" | "decoding" | "displaying" | "success" | "error" | "busy"
   final String? message; // 附加訊息
 
   const DeviceStateMessage({
@@ -45,10 +48,16 @@ class DeviceStateMessage {
   });
 
   /// 從 JSON 字串反序列化
-  factory DeviceStateMessage.fromJsonString(String jsonString) {
+  factory DeviceStateMessage.fromJsonString(
+    String jsonString, {
+    String? fallbackMac,
+  }) {
     final map = jsonDecode(jsonString) as Map<String, dynamic>;
+    final rawMac = (map['mac'] as String? ?? '').trim();
+    final resolvedMac = rawMac.isNotEmpty ? rawMac : (fallbackMac ?? '');
+
     return DeviceStateMessage(
-      mac: map['mac'] as String? ?? '',
+      mac: EpaperDevice.normalizeMac(resolvedMac),
       status: map['status'] as String? ?? 'unknown',
       message: map['message'] as String?,
     );

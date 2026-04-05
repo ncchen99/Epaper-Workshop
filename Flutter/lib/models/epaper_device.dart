@@ -10,13 +10,19 @@ class EpaperDevice {
   DateTime? lastStatusAt; // 最後回報時間
 
   EpaperDevice({
-    required this.macAddress,
+    required String macAddress,
     this.nickname,
     DateTime? addedAt,
     this.lastStatus,
     this.lastStatusMessage,
     this.lastStatusAt,
-  }) : addedAt = addedAt ?? DateTime.now();
+  }) : macAddress = normalizeMac(macAddress),
+       addedAt = addedAt ?? DateTime.now();
+
+  /// 標準化 MAC（移除分隔符號、轉大寫）
+  static String normalizeMac(String mac) {
+    return mac.replaceAll(':', '').replaceAll('-', '').toUpperCase();
+  }
 
   /// 該裝置的 MQTT 指令 Topic
   String get cmdTopic => 'devices/$macAddress/cmd';

@@ -33,21 +33,25 @@ class DeviceCard extends StatelessWidget {
         margin: const EdgeInsets.symmetric(vertical: LegoSpacing.xs),
         padding: const EdgeInsets.all(LegoSpacing.md),
         decoration: BoxDecoration(
-          color: isSelected ? LegoColors.primary.withValues(alpha: 0.1) : LegoColors.white,
+          color:
+              isSelected
+                  ? LegoColors.primary.withValues(alpha: 0.1)
+                  : LegoColors.white,
           borderRadius: BorderRadius.circular(LegoSpacing.sm),
           border: Border.all(
             color: isSelected ? LegoColors.primary : LegoColors.backgroundGray,
             width: isSelected ? 2 : 1,
           ),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: LegoColors.primary.withValues(alpha: 0.2),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ]
-              : [],
+          boxShadow:
+              isSelected
+                  ? [
+                    BoxShadow(
+                      color: LegoColors.primary.withValues(alpha: 0.2),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ]
+                  : [],
         ),
         child: Row(
           children: [
@@ -59,11 +63,7 @@ class DeviceCard extends StatelessWidget {
                 color: _getStatusColor().withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Icon(
-                Icons.tablet_android,
-                color: _getStatusColor(),
-                size: 20,
-              ),
+              child: Icon(_getStatusIcon(), color: _getStatusColor(), size: 20),
             ),
             const SizedBox(width: LegoSpacing.md),
 
@@ -114,20 +114,69 @@ class DeviceCard extends StatelessWidget {
 
   Widget _buildStatusChip() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: _getStatusColor().withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(4),
       ),
-      child: Text(
-        _getStatusText(),
-        style: TextStyle(
-          color: _getStatusColor(),
-          fontSize: 9,
-          fontWeight: FontWeight.w600,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(_getStatusIcon(), color: _getStatusColor(), size: 12),
+          const SizedBox(width: 4),
+          Text(
+            _getStatusText(),
+            style: TextStyle(
+              color: _getStatusColor(),
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
+  }
+
+  IconData _getStatusIcon() {
+    switch (device.lastStatus) {
+      case 'online':
+      case 'success':
+        return Icons.check_circle;
+      case 'downloading':
+      case 'decoding':
+      case 'displaying':
+      case 'queued':
+        return Icons.sync;
+      case 'error':
+        return Icons.error;
+      case 'busy':
+        return Icons.schedule;
+      default:
+        return Icons.tablet_android;
+    }
+  }
+
+  String _getStatusText() {
+    switch (device.lastStatus) {
+      case 'online':
+        return 'Online';
+      case 'success':
+        return 'Success';
+      case 'downloading':
+        return 'Downloading';
+      case 'decoding':
+        return 'Decoding';
+      case 'displaying':
+        return 'Displaying';
+      case 'queued':
+        return 'Queued';
+      case 'error':
+        return 'Error';
+      case 'busy':
+        return 'Busy';
+      default:
+        return 'Unknown';
+    }
   }
 
   Color _getStatusColor() {
@@ -145,29 +194,6 @@ class DeviceCard extends StatelessWidget {
         return LegoColors.error;
       default:
         return LegoColors.darkGray;
-    }
-  }
-
-  String _getStatusText() {
-    switch (device.lastStatus) {
-      case 'online':
-        return '🟢 Online';
-      case 'success':
-        return '✅ Success';
-      case 'downloading':
-        return '⬇️ Downloading';
-      case 'decoding':
-        return '🔄 Decoding';
-      case 'displaying':
-        return '📺 Displaying';
-      case 'queued':
-        return '⏳ Queued';
-      case 'error':
-        return '❌ Error';
-      case 'busy':
-        return '⏳ Busy';
-      default:
-        return '⚪ Unknown';
     }
   }
 }

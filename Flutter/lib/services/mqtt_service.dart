@@ -10,12 +10,7 @@ import '../models/models.dart';
 import '../config.dart';
 
 /// MQTT 連線狀態
-enum MqttConnectionStatus {
-  disconnected,
-  connecting,
-  connected,
-  error,
-}
+enum MqttConnectionStatus { disconnected, connecting, connected, error }
 
 /// MQTT 核心服務
 ///
@@ -81,31 +76,31 @@ class MqttService {
       try {
         resolvedHost = await _resolveBrokerHost(host);
 
-        _client = MqttServerClient(resolvedHost, clientId)
-          ..port = port
-          ..keepAlivePeriod = 30
-          ..autoReconnect = true
-          ..resubscribeOnAutoReconnect = true
-          ..onAutoReconnect = _onAutoReconnect
-          ..onAutoReconnected = _onAutoReconnected
-          ..onConnected = _onConnected
-          ..onDisconnected = _onDisconnected
-          ..logging(on: false)
-          ..setProtocolV311();
+        _client =
+            MqttServerClient(resolvedHost, clientId)
+              ..port = port
+              ..keepAlivePeriod = 30
+              ..autoReconnect = true
+              ..resubscribeOnAutoReconnect = true
+              ..onAutoReconnect = _onAutoReconnect
+              ..onAutoReconnected = _onAutoReconnected
+              ..onConnected = _onConnected
+              ..onDisconnected = _onDisconnected
+              ..logging(on: false)
+              ..setProtocolV311();
 
         // 設定 Will Message（斷線時通知）
-        final connMsgBuilder = MqttConnectMessage()
-            .withClientIdentifier(clientId)
-          .startClean();
+        final connMsgBuilder =
+            MqttConnectMessage().withClientIdentifier(clientId).startClean();
         _client!.connectionMessage = connMsgBuilder;
 
         debugPrint(
           'MQTT: Attempting candidate $host (resolved: $resolvedHost):$port, clientId: $clientId',
         );
 
-        await _client!
-            .connect()
-            .timeout(Duration(seconds: AppConfig.mqttConnectTimeoutSeconds));
+        await _client!.connect().timeout(
+          Duration(seconds: AppConfig.mqttConnectTimeoutSeconds),
+        );
 
         if (_client!.connectionStatus?.state == MqttConnectionState.connected) {
           _updateStatus(MqttConnectionStatus.connected);
@@ -120,8 +115,7 @@ class MqttService {
             'Candidate $host failed: ${_client!.connectionStatus?.state} (${_client!.connectionStatus?.returnCode})';
         debugPrint('MQTT: $latestError');
       } catch (e, stackTrace) {
-        latestError =
-            'Candidate $host failed (resolved: $resolvedHost): $e';
+        latestError = 'Candidate $host failed (resolved: $resolvedHost): $e';
         debugPrint('MQTT: Connection error: $latestError');
         debugPrint('MQTT: StackTrace: $stackTrace');
       }
@@ -263,11 +257,10 @@ class MqttService {
       }
 
       final sorted = _prioritizeAddresses(lookup);
-      final selected =
-          sorted.where((a) => !_isLoopbackOrLinkLocal(a)).cast<InternetAddress>().firstWhere(
-            (_) => true,
-            orElse: () => sorted.first,
-          );
+      final selected = sorted
+          .where((a) => !_isLoopbackOrLinkLocal(a))
+          .cast<InternetAddress>()
+          .firstWhere((_) => true, orElse: () => sorted.first);
 
       debugPrint(
         'MQTT: DNS fallback resolved $brokerHost -> ${selected.address} (candidates: ${sorted.map((a) => a.address).join(', ')})',
@@ -360,21 +353,34 @@ class MqttService {
     for (final message in messages) {
       final topic = message.topic;
       final pubMessage = message.payload as MqttPublishMessage;
-      final payload =
-          MqttPublishPayload.bytesToStringAsString(pubMessage.payload.message);
+      final payload = MqttPublishPayload.bytesToStringAsString(
+        pubMessage.payload.message,
+      );
 
       debugPrint('MQTT: Received [$topic]: $payload');
 
       // 解析狀態訊息
       if (topic.endsWith('/state')) {
         try {
-          final stateMsg = DeviceStateMessage.fromJsonString(payload);
+          final topicMac = _extractMacFromStateTopic(topic);
+          final stateMsg = DeviceStateMessage.fromJsonString(
+            payload,
+            fallbackMac: topicMac,
+          );
           _stateMessageController.add(stateMsg);
         } catch (e) {
           debugPrint('MQTT: Failed to parse state message: $e');
         }
       }
     }
+  }
+
+  String _extractMacFromStateTopic(String topic) {
+    final parts = topic.split('/');
+    if (parts.length >= 3 && parts.first == 'devices') {
+      return parts[1];
+    }
+    return '';
   }
 
   /// 釋放資源

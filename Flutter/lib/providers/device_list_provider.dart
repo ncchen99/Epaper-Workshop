@@ -71,14 +71,13 @@ class DeviceListNotifier extends StateNotifier<DeviceListState> {
     _stateSubscription = _mqttService.stateMessageStream.listen((stateMsg) {
       // 找到對應的裝置並更新狀態
       final devices = List<EpaperDevice>.from(state.devices);
-      final index =
-          devices.indexWhere((d) => d.macAddress == stateMsg.mac);
+      final messageMac = EpaperDevice.normalizeMac(stateMsg.mac);
+      final index = devices.indexWhere(
+        (d) => EpaperDevice.normalizeMac(d.macAddress) == messageMac,
+      );
 
       if (index >= 0) {
-        devices[index].updateStatus(
-          stateMsg.status,
-          message: stateMsg.message,
-        );
+        devices[index].updateStatus(stateMsg.status, message: stateMsg.message);
         state = state.copyWith(devices: devices);
       }
     });
@@ -96,10 +95,7 @@ class DeviceListNotifier extends StateNotifier<DeviceListState> {
       return;
     }
 
-    final device = EpaperDevice(
-      macAddress: normalizedMac,
-      nickname: nickname,
-    );
+    final device = EpaperDevice(macAddress: normalizedMac, nickname: nickname);
 
     await _storageService.saveDevice(device);
 
@@ -123,7 +119,7 @@ class DeviceListNotifier extends StateNotifier<DeviceListState> {
 
     final updatedDevices =
         state.devices.where((d) => d.macAddress != macAddress).toList();
-    
+
     int? newSelectedIndex = state.selectedIndex;
     if (updatedDevices.isEmpty) {
       newSelectedIndex = null;

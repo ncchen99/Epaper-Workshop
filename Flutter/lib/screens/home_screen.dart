@@ -28,7 +28,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen>
-  with WidgetsBindingObserver {
+    with WidgetsBindingObserver {
   final ImagePicker _imagePicker = ImagePicker();
   final R2UploadService _r2Service = R2UploadService();
   final ImageProcessorService _imageProcessor = ImageProcessorService();
@@ -49,11 +49,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   Future<void> _connectMqtt() async {
     ref.read(logProvider.notifier).info('Connecting to MQTT Broker...');
 
-    final success = await ref.read(mqttConnectionProvider.notifier).connect(
-      AppConfig.mqttBrokerHost,
-      port: AppConfig.mqttBrokerPort,
-      fallbackHosts: AppConfig.mqttBrokerCandidates().skip(1).toList(),
-    );
+    final success = await ref
+        .read(mqttConnectionProvider.notifier)
+        .connect(
+          AppConfig.mqttBrokerHost,
+          port: AppConfig.mqttBrokerPort,
+          fallbackHosts: AppConfig.mqttBrokerCandidates().skip(1).toList(),
+        );
 
     if (success) {
       ref.read(logProvider.notifier).success('MQTT Connected!');
@@ -62,7 +64,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       final mqttService = ref.read(mqttServiceProvider);
       _stateSub?.cancel();
       _stateSub = mqttService.stateMessageStream.listen((stateMsg) {
-        final statusText = '${stateMsg.mac}: ${stateMsg.status}';
+        final deviceName = _resolveDeviceNameByMac(stateMsg.mac);
+        final details = stateMsg.message?.trim();
+        final statusText =
+            details != null && details.isNotEmpty
+                ? '$deviceName: ${stateMsg.status} ($details)'
+                : '$deviceName: ${stateMsg.status}';
         if (stateMsg.isSuccess) {
           ref.read(logProvider.notifier).success(statusText);
         } else if (stateMsg.isError) {
@@ -118,11 +125,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
       if (selectedImage.file != null) {
         // ---- 處理圖片 → 上傳 R2 → MQTT 發送 URL ----
-        ref.read(logProvider.notifier).info('Processing: rotate, resize, crop...');
+        ref
+            .read(logProvider.notifier)
+            .info('Processing: rotate, resize, crop...');
 
         // Step 1: 圖片處理
-        final processResult =
-            await _imageProcessor.processImage(selectedImage.file!);
+        final processResult = await _imageProcessor.processImage(
+          selectedImage.file!,
+        );
         if (!processResult.success || processResult.processedFile == null) {
           throw Exception(processResult.error ?? 'Image processing failed');
         }
@@ -130,8 +140,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         ref.read(logProvider.notifier).info('Uploading to Cloudflare R2...');
 
         // Step 2: 上傳到 R2
-        final filename =
-            R2UploadService.generateFilename(targetDevice.macAddress);
+        final filename = R2UploadService.generateFilename(
+          targetDevice.macAddress,
+        );
         final imageUrl = await _r2Service.uploadImage(
           processResult.processedFile!,
           filename,
@@ -151,9 +162,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           await processResult.processedFile!.delete();
         } catch (_) {}
 
-        ref.read(logProvider.notifier).success(
-          'Sent to ${targetDevice.displayName}!',
-        );
+        ref
+            .read(logProvider.notifier)
+            .success('Sent to ${targetDevice.displayName}!');
       } else {
         // Preset 圖片 → 顯示快取
         ref.read(logProvider.notifier).info('Sending show command...');
@@ -231,13 +242,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Device Selector
-                  _buildDeviceSelectorCard(deviceState),
+                  // Image Selection Area
+                  _buildImageSelectionCard(imageState),
 
                   const SizedBox(height: LegoSpacing.md),
 
-                  // Image Selection Area
-                  _buildImageSelectionCard(imageState),
+                  // Device Selector
+                  _buildDeviceSelectorCard(deviceState),
 
                   const SizedBox(height: LegoSpacing.md),
 
@@ -296,11 +307,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      Icons.settings,
-                      size: 16,
-                      color: LegoColors.primary,
-                    ),
+                    Icon(Icons.settings, size: 16, color: LegoColors.primary),
                     const SizedBox(width: 4),
                     Flexible(
                       child: Text(
@@ -525,6 +532,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       case LogLevel.error:
         return LegoColors.error;
     }
+  }
+
+  String _resolveDeviceNameByMac(String mac) {
+    final normalizedMac = EpaperDevice.normalizeMac(mac);
+    if (normalizedMac.isEmpty) {
+      return 'Unknown Device';
+    }
+
+    final devices = ref.read(deviceListProvider).devices;
+    for (final device in devices) {
+      if (EpaperDevice.normalizeMac(device.macAddress) == normalizedMac) {
+        return device.displayName;
+      }
+    }
+
+    return 'Unknown Device';
   }
 }
 
