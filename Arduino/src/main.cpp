@@ -76,8 +76,9 @@ bool nowBtnState = LOW;
 unsigned long lastBtnDebounceTime = 0;
 unsigned long debounceDelay = 50;
 
-// 上一次顯示的 slot（供按鈕快取使用）
+// 上一次顯示的 slot（供按鈕再次顯示使用）
 int lastDisplayedSlot = 1;
+bool hasDecodedImageInRam = false;
 
 // ======== 函式前向宣告 ========
 void LED(uint16_t N, uint16_t H, uint8_t S, uint8_t B);
@@ -88,8 +89,6 @@ void publishState(const char *status, const char *message = nullptr);
 void download_PNG_Url(String _url, String _target);
 void PngDecodeLittleFS(const String &path);
 void JpegDecodeLittleFS(const String &path);
-void SaveArray(String _pngid);
-void GetArray(String _pngid);
 bool showImage(int slot);
 void updateImageFromUrl(const String &url, int slot);
 String getMacAddress();
@@ -169,7 +168,7 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
     publishState("queued", "Update request received");
 
   } else if (strcmp(action, "show") == 0) {
-    // 顯示已快取的圖片
+    // 直接重繪 RAM 中最近一次解碼完成的圖片
     int slot = doc["slot"] | 1;
     Serial.printf("顯示 Slot %d\n", slot);
     showImage(slot);
@@ -626,78 +625,20 @@ void download_PNG_Url(String _url, String _target) {
   delay(100);
 }
 
-// ======================== 檔案讀寫 ========================
-void SaveArray(String _pngid) {
-  Serial.println("SaveArray: " + _pngid);
-
-  File file = LittleFS.open(_pngid, FILE_WRITE);
-  if (!file) {
-    Serial.println("檔案開啟失敗！");
-    return;
-  }
-
-  size_t totalSize = sizeof(epd_bitmap_canvas);
-  const size_t chunkSize = 4096;
-  size_t totalBytesWritten = 0;
-
-  for (size_t i = 0; i < totalSize; i += chunkSize) {
-    size_t bytesToWrite = min(chunkSize, totalSize - i);
-    size_t bytesWritten = file.write(epd_bitmap_canvas + i, bytesToWrite);
-
-    if (bytesWritten != bytesToWrite) {
-      Serial.println("寫入失敗！");
-      break;
-    }
-
-    totalBytesWritten += bytesWritten;
-    yield();
-    delay(1);
-  }
-
-  if (totalBytesWritten == totalSize) {
-    Serial.printf("成功寫入 %d bytes\n", totalBytesWritten);
-  }
-
-  file.close();
-}
-
-void GetArray(String _pngid) {
-  Serial.println("讀取: " + _pngid);
-
-  File file = LittleFS.open(_pngid, FILE_READ);
-  if (!file) {
-    Serial.println("檔案開啟失敗！");
-    return;
-  }
-
-  size_t fileSize = file.size();
-  if (fileSize > sizeof(epd_bitmap_canvas)) {
-    fileSize = sizeof(epd_bitmap_canvas);
-  } else if (fileSize < sizeof(epd_bitmap_canvas)) {
-    memset(epd_bitmap_canvas, 0, sizeof(epd_bitmap_canvas));
-  }
-
-  size_t bytesRead = file.readBytes((char *)epd_bitmap_canvas, fileSize);
-  Serial.printf("讀取 %d bytes\n", bytesRead);
-  file.close();
-}
-
 // ======================== 顯示圖片 ========================
 bool showImage(int slot) {
-  String filename = "/" + String(slot) + ".bin";
-  Serial.println("顯示圖片: " + filename);
+  Serial.printf("顯示圖片請求: Slot %d\n", slot);
 
-  if (!LittleFS.exists(filename)) {
-    Serial.println("錯誤: 檔案不存在 " + filename);
-    publishState("error", "No cached image for this slot");
+  if (!hasDecodedImageInRam) {
+    Serial.println("錯誤: RAM 中沒有可顯示的已解碼圖片");
+    publishState("error", "No decoded image in memory yet");
     return false;
   }
 
   isProcessing = true;
-  publishState("displaying", "Loading cached image");
+  publishState("displaying", "Rendering decoded image from RAM");
 
   LED(0, 92, 255, BRIGHTNESS);
-  GetArray(filename);
   LED(0, 192, 255, BRIGHTNESS);
 
   Serial.println("正在刷新電子紙...");
@@ -751,9 +692,6 @@ void updateImageFromUrl(const String &url, int slot) {
   Serial.println("解碼完成");
   LED(0, 64, 255, BRIGHTNESS);
 
-  // 儲存為 bin 供下次快取
-  SaveArray("/" + String(slot) + ".bin");
-
   // 刷新 E-Paper
   publishState("displaying", "Refreshing display...");
   Serial.println("正在刷新電子紙...");
@@ -763,6 +701,7 @@ void updateImageFromUrl(const String &url, int slot) {
 
   LED(0, 64, 255, BRIGHTNESS);
   lastDisplayedSlot = slot;
+  hasDecodedImageInRam = true;
 
   // 清理暫存檔
   LittleFS.remove(tempFile);
@@ -929,7 +868,7 @@ void loop() {
     if (btnValue != nowBtnState) {
       nowBtnState = btnValue;
 
-      // 按鈕按下（HIGH）時觸發：顯示上一次快取的圖片
+      // 按鈕按下（HIGH）時觸發：重顯示上一次成功解碼的圖片
       if (nowBtnState == HIGH) {
         Serial.printf("按鈕按下 → 顯示 Slot %d\n", lastDisplayedSlot);
         if (!isProcessing) {
