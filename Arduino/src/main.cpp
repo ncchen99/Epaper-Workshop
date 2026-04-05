@@ -19,6 +19,7 @@
 #include <JPEGDEC.h>
 #include <LittleFS.h>
 #include <PubSubClient.h>
+#include <qrcode.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <pngle.h>
@@ -93,6 +94,8 @@ bool showImage(int slot);
 void updateImageFromUrl(const String &url, int slot);
 String getMacAddress();
 void displayMacOnEPaper();
+bool displayMacQrOnEPaper();
+void setEpdPixel(uint32_t x, uint32_t y, uint8_t colorCode);
 
 // ======================== LED 控制 ========================
 void LED(uint16_t N, uint16_t H, uint8_t S, uint8_t B) {
@@ -276,6 +279,22 @@ static uint8_t secondPixelColorCode = 0;
 static uint32_t millisPNG = 0;
 static volatile bool failed = false;
 static uint32_t imgW = 0, imgH = 0;
+
+void setEpdPixel(uint32_t x, uint32_t y, uint8_t colorCode) {
+  if (x >= EPD_WIDTH || y >= EPD_HEIGHT)
+    return;
+
+  const size_t pixelIndex = (size_t)y * EPD_WIDTH + x;
+  const size_t byteIndex = pixelIndex / 2;
+
+  if ((pixelIndex & 0x01) == 0) {
+    epd_bitmap_canvas[byteIndex] =
+        (epd_bitmap_canvas[byteIndex] & 0x0F) | ((colorCode & 0x0F) << 4);
+  } else {
+    epd_bitmap_canvas[byteIndex] =
+        (epd_bitmap_canvas[byteIndex] & 0xF0) | (colorCode & 0x0F);
+  }
+}
 
 static inline void resetDecodeState() {
   failed = false;
@@ -735,7 +754,83 @@ void displayMacOnEPaper() {
   Serial.println("  MQTT cmd Topic:   " + cmdTopic);
   Serial.println("  MQTT state Topic: " + stateTopic);
   Serial.println("===========================================");
-  Serial.println("請在 Flutter App 中輸入上面的 MAC Address 來綁定此裝置");
+  Serial.println("按下 D9 按鈕可在 E-Paper 顯示 MAC QR Code，供 App 掃描綁定");
+}
+
+bool displayMacQrOnEPaper() {
+  if (deviceMac.length() != 12) {
+    Serial.println("無法顯示 QR：MAC 長度錯誤");
+    publishState("error", "Invalid MAC length for QR");
+    return false;
+  }
+
+  // 內容保持純 MAC（12 碼）讓 App 可直接正規化使用
+  const String qrPayload = deviceMac;
+  uint8_t qrVersion = 6;
+  const uint8_t ecLevel = 0;
+  const uint16_t qrDataSize = qrcode_getBufferSize(qrVersion);
+  uint8_t *qrcodeData = (uint8_t *)malloc(qrDataSize);
+  if (!qrcodeData) {
+    Serial.println("無法顯示 QR：記憶體不足");
+    publishState("error", "Out of memory for QR buffer");
+    return false;
+  }
+
+  QRCode qrcode;
+  qrcode_initText(&qrcode, qrcodeData, qrVersion, ecLevel, qrPayload.c_str());
+
+  const int quietZoneModules = 4;
+  const int qrModulesWithQuiet = qrcode.size + quietZoneModules * 2;
+  const int moduleScale = min((int)EPD_WIDTH, (int)EPD_HEIGHT) / qrModulesWithQuiet;
+  if (moduleScale <= 0) {
+    Serial.println("無法顯示 QR：模組縮放比例無效");
+    publishState("error", "QR scale error");
+    free(qrcodeData);
+    return false;
+  }
+
+  const int qrPixelSize = qrModulesWithQuiet * moduleScale;
+  const int startX = ((int)EPD_WIDTH - qrPixelSize) / 2;
+  const int startY = ((int)EPD_HEIGHT - qrPixelSize) / 2;
+
+  memset(epd_bitmap_canvas, 0x11, EPD_WIDTH * EPD_HEIGHT / 2);
+
+  for (int my = 0; my < qrcode.size; ++my) {
+    for (int mx = 0; mx < qrcode.size; ++mx) {
+      const bool isBlack = qrcode_getModule(&qrcode, mx, my);
+      const uint8_t color = isBlack ? EPD_4IN0E_BLACK : EPD_4IN0E_WHITE;
+
+      const int drawX = startX + (mx + quietZoneModules) * moduleScale;
+      const int drawY = startY + (my + quietZoneModules) * moduleScale;
+
+      for (int dy = 0; dy < moduleScale; ++dy) {
+        for (int dx = 0; dx < moduleScale; ++dx) {
+          setEpdPixel(drawX + dx, drawY + dy, color);
+        }
+      }
+    }
+  }
+
+  isProcessing = true;
+  publishState("displaying", "Showing device QR code");
+
+  LED(0, 92, 255, BRIGHTNESS);
+  LED(1, 92, 255, BRIGHTNESS);
+  LED(2, 92, 255, BRIGHTNESS);
+
+  unsigned long startTime = millis();
+  EPD_4IN0E_Display(epd_bitmap_canvas);
+  Serial.printf("MAC QR 顯示完成，耗時 %lu ms\n", millis() - startTime);
+  Serial.println("掃描內容 (MAC): " + qrPayload);
+
+  LED(0, 64, 255, BRIGHTNESS);
+  LED(1, 64, 255, BRIGHTNESS);
+  LED(2, 64, 255, BRIGHTNESS);
+
+  publishState("success", "Device MAC QR displayed");
+  isProcessing = false;
+  free(qrcodeData);
+  return true;
 }
 
 // ======================== Setup ========================
@@ -868,11 +963,11 @@ void loop() {
     if (btnValue != nowBtnState) {
       nowBtnState = btnValue;
 
-      // 按鈕按下（HIGH）時觸發：重顯示上一次成功解碼的圖片
+      // 按鈕按下（HIGH）時觸發：顯示裝置 MAC 的 QR Code
       if (nowBtnState == HIGH) {
-        Serial.printf("按鈕按下 → 顯示 Slot %d\n", lastDisplayedSlot);
+        Serial.println("按鈕按下 → 顯示裝置 MAC QR Code");
         if (!isProcessing) {
-          showImage(lastDisplayedSlot);
+          displayMacQrOnEPaper();
         }
       }
     }

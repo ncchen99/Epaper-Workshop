@@ -36,6 +36,9 @@ dependencies:
   
   # Image Picker (Camera/Gallery)
   image_picker: ^1.1.2
+
+  # QR / Barcode scanner
+  mobile_scanner: ^5.2.3
   
   # Google Fonts for LEGO-style typography
   google_fonts: ^6.2.1

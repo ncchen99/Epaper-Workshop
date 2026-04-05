@@ -33,23 +33,24 @@ class DeviceCard extends StatelessWidget {
         margin: const EdgeInsets.symmetric(vertical: LegoSpacing.xs),
         padding: const EdgeInsets.all(LegoSpacing.md),
         decoration: BoxDecoration(
-          color:
-              isSelected
-                  ? LegoColors.primary.withValues(alpha: 0.1)
-                  : LegoColors.white,
+          color: LegoColors.white,
           borderRadius: BorderRadius.circular(LegoSpacing.sm),
           border: Border.all(
-            color: isSelected ? LegoColors.primary : LegoColors.backgroundGray,
+            color:
+                isSelected
+                    ? LegoColors.primary.withValues(alpha: 0.7)
+                    : LegoColors.backgroundGray,
             width: isSelected ? 2 : 1,
           ),
           boxShadow:
               isSelected
                   ? [
                     BoxShadow(
-                      color: LegoColors.primary.withValues(alpha: 0.2),
-                      blurRadius: 8,
+                      color: LegoColors.primary.withValues(alpha: 0.14),
+                      blurRadius: 10,
                       offset: const Offset(0, 2),
                     ),
+                    ...LegoShadows.raised,
                   ]
                   : [],
         ),

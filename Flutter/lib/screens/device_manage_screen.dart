@@ -5,6 +5,7 @@ import '../theme/lego_theme.dart';
 import '../widgets/widgets.dart';
 import '../providers/providers.dart';
 import '../models/models.dart';
+import 'qr_scanner_screen.dart';
 
 /// 裝置管理畫面
 ///
@@ -84,6 +85,23 @@ class _DeviceManageScreenState extends ConsumerState<DeviceManageScreen> {
           .read(deviceListProvider.notifier)
           .removeDevice(device.macAddress);
     }
+  }
+
+  Future<void> _scanQrCode() async {
+    final scannedMac = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const QrScannerScreen()),
+    );
+
+    if (!mounted || scannedMac == null || scannedMac.isEmpty) return;
+
+    _macController.text = scannedMac;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('已掃描 MAC: $scannedMac，請輸入暱稱後新增裝置'),
+        backgroundColor: LegoColors.info,
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   String? _validateMac(String? value) {
@@ -187,6 +205,14 @@ class _DeviceManageScreenState extends ConsumerState<DeviceManageScreen> {
               ),
             ),
             const SizedBox(height: LegoSpacing.md),
+
+            LegoButton(
+              label: '掃描 QR Code',
+              icon: Icons.qr_code_scanner,
+              type: LegoButtonType.secondary,
+              onPressed: _scanQrCode,
+            ),
+            const SizedBox(height: LegoSpacing.sm),
 
             // 新增按鈕
             LegoButton(
