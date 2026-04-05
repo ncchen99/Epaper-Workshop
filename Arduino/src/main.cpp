@@ -566,7 +566,7 @@ void download_PNG_Url(String _url, String _target) {
     Serial.printf("HTTP 回應碼: %d\n", httpCode);
 
     if (httpCode == HTTP_CODE_OK) {
-      Serial.println("下載成功，開始寫入 LittleFS...");
+      Serial.println("下載成功");
       downloadSuccess = true;
 
       if (LittleFS.exists(_target)) {
