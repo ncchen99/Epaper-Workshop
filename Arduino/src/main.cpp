@@ -36,7 +36,7 @@
 #define BTN_PIN D9 // 數位按鈕（3-pin: VCC, GND, OUT）
 
 // ======== Wi-Fi 設定 ========
-const char *ssid = "TMM";
+const char *ssid = "fatfat";
 const char *password = "88888888";
 
 // ======== MQTT 設定 ========

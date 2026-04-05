@@ -46,7 +46,11 @@ flutter pub get
 flutter run
 ```
 
-### 3. 配置與調整
+### 3. iOS Build 指南 (IPA)
+
+如果你需要編譯並導出 iOS 的 IPA 檔案，請參考詳細的 [iOS Build 指南](../docs/ios_build_guide.md)。
+
+### 4. 配置與調整
 
 編輯 `lib/config.dart` 進行進階設定：
 

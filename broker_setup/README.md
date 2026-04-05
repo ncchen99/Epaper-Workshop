@@ -58,14 +58,34 @@ sudo cp mosquitto.conf /etc/mosquitto/mosquitto.conf
 
 ## 啟動 Broker
 
-### macOS
+### macOS (Homebrew)
 
+**方法 A：前景執行 (偵錯用，可看即時 Log)**
+在當前專案目錄下執行：
 ```bash
-# 前景執行（可看到即時 log）
-mosquitto -c /opt/homebrew/etc/mosquitto/mosquitto.conf -v
+mosquitto -c mosquitto.conf -v
+```
 
-# 或以 Homebrew 背景服務啟動
+**方法 B：背景執行 (啟動並設定開機自啟)**
+1. 將設定檔複製到系統預設目錄：
+```bash
+# M1/M2/M3 Mac
+cp mosquitto.conf /opt/homebrew/etc/mosquitto/mosquitto.conf
+
+# Intel Mac
+cp mosquitto.conf /usr/local/etc/mosquitto/mosquitto.conf
+```
+
+2. 管理服務指令：
+```bash
+# 啟動服務 (等同於 start + enable)
 brew services start mosquitto
+
+# 重新啟動 (更換設定檔後執行)
+brew services restart mosquitto
+
+# 停止服務
+brew services stop mosquitto
 ```
 
 ### Windows
@@ -84,9 +104,42 @@ mosquitto -c /etc/mosquitto/mosquitto.conf -v
 # 2026-04-05 測試
 mosquitto -c /Users/ncchen/Downloads/Epaper-Workshop/broker_setup/mosquitto.conf -v
 
-# 或使用 systemd
+### Linux (Systemd)
+
+若要讓 Mosquitto 服務使用客製化的設定檔，有兩種做法：
+
+**做法 A：覆蓋預設設定檔 (最簡單 / 建議)**
+將你的 `mosquitto.conf` 直接覆蓋到系統預設路徑：
+```bash
+sudo cp mosquitto.conf /etc/mosquitto/mosquitto.conf
+sudo systemctl restart mosquitto
+```
+
+**做法 B：修改 Service 指定路徑 (進階)**
+1. 執行 `sudo systemctl edit mosquitto`
+2. 加入以下內容來變更啟動參數：
+```ini
+[Service]
+ExecStart=
+ExecStart=/usr/sbin/mosquitto -c /你的專案絕對路徑/mosquitto.conf
+```
+3. 重載並啟動：
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart mosquitto
+```
+
+**服務管理基礎指令：**
+```bash
+# 啟動服務
 sudo systemctl start mosquitto
+
+# 設定開機自動啟動
 sudo systemctl enable mosquitto
+
+# 檢查目前狀態
+sudo systemctl status mosquitto
+```
 ```
 
 ---
