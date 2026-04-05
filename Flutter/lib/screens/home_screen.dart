@@ -426,7 +426,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   ref.read(imageSelectionProvider.notifier).selectImage(index);
                 },
                 label: image.isDemo ? 'Demo ${image.slot}' : 'Uploaded',
-                rotateLeft: image.isDemo,
+                rotateLeft: false,
               );
             },
           ),

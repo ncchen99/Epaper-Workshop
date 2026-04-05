@@ -9,26 +9,25 @@ import 'theme/lego_theme.dart';
 import 'screens/home_screen.dart';
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
 
-  FlutterError.onError = (FlutterErrorDetails details) {
-    FlutterError.presentError(details);
-    debugPrint('FlutterError: ${details.exceptionAsString()}');
-    debugPrint('FlutterError stack: ${details.stack}');
-  };
+    FlutterError.onError = (FlutterErrorDetails details) {
+      FlutterError.presentError(details);
+      debugPrint('FlutterError: ${details.exceptionAsString()}');
+      debugPrint('FlutterError stack: ${details.stack}');
+    };
 
-  PlatformDispatcher.instance.onError = (error, stack) {
-    debugPrint('PlatformDispatcher error: $error');
-    debugPrint('PlatformDispatcher stack: $stack');
-    return true;
-  };
+    PlatformDispatcher.instance.onError = (error, stack) {
+      debugPrint('PlatformDispatcher error: $error');
+      debugPrint('PlatformDispatcher stack: $stack');
+      return true;
+    };
 
-  await dotenv.load(fileName: '.env');
+    await dotenv.load(fileName: '.env');
 
-  runZonedGuarded(() => runApp(const ProviderScope(child: LegoEPaperApp())), (
-    error,
-    stack,
-  ) {
+    runApp(const ProviderScope(child: LegoEPaperApp()));
+  }, (error, stack) {
     debugPrint('runZonedGuarded error: $error');
     debugPrint('runZonedGuarded stack: $stack');
   });

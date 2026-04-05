@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -92,24 +93,35 @@ class ImageSelectionNotifier extends StateNotifier<ImageSelectionState> {
     _initDemoImages();
   }
 
+  Future<ByteData> _loadDemoAsset(int slot) async {
+    final candidates = [
+      'assets/images/demo$slot.jpg',
+      'assets/images/demo_$slot.jpg',
+    ];
+
+    for (final path in candidates) {
+      try {
+        return await rootBundle.load(path);
+      } catch (_) {
+        // Try next candidate path.
+      }
+    }
+
+    throw Exception('Demo asset not found for slot $slot');
+  }
+
   /// Initialize with demo images loaded as files (same as user uploads)
   Future<void> _initDemoImages() async {
     try {
       final tempDir = await getTemporaryDirectory();
       final List<SelectableImage> demoImages = [];
 
-      // Load demo images from assets and save to temp files
-      final demoAssets = [
-        {'path': 'assets/images/demo_1.jpg', 'slot': 1},
-        {'path': 'assets/images/demo_2.jpg', 'slot': 2},
-      ];
+      // Load demo1..demo4 from assets and save to temp files.
+      for (int i = 0; i < 4; i++) {
+        final slot = i + 1;
 
-      for (int i = 0; i < demoAssets.length; i++) {
-        final assetPath = demoAssets[i]['path'] as String;
-        final slot = demoAssets[i]['slot'] as int;
-
-        // Load asset as bytes
-        final byteData = await rootBundle.load(assetPath);
+        // Load asset as bytes (supports demoN.jpg and demo_N.jpg).
+        final byteData = await _loadDemoAsset(slot);
         final bytes = byteData.buffer.asUint8List();
 
         // Save to temp file
