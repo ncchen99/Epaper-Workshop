@@ -4,9 +4,9 @@
 
 ## 畫面與裝置展示
 
-| PXL（電子紙圖檔） | Screenshot（首頁圖檔） | Target Device（裝置與操作選單圖檔） |
+| 電子紙 | 首頁 | 裝置與操作選單 |
 | --- | --- | --- |
-| ![PXL](./docs/images/PXL_20260405_141720574.jpg) | ![Screenshot](./docs/images/Screenshot_20260406-011133.png) | ![Target Device](./docs/images/Screenshot_20260406-011149.png) |
+| <img src="./docs/images/PXL_20260405_141720574.jpg" alt="PXL" height="320"> | <img src="./docs/images/Screenshot_20260406-011133.png" alt="Screenshot" height="320"> | <img src="./docs/images/Screenshot_20260406-011149.png" alt="Target Device" height="320"> |
 
 目前主線版本已全面採用 MQTT 架構：
 - Arduino 是 MQTT Client，接收裝置專屬 Topic 指令。
