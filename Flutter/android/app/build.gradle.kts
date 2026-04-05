@@ -5,6 +5,14 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+configurations.all {
+    resolutionStrategy {
+        // mobile_scanner 5.x pins older ML Kit; force newer artifacts with 16KB-page-size support.
+        force("com.google.mlkit:barcode-scanning:17.3.0")
+        force("com.google.android.gms:play-services-mlkit-barcode-scanning:18.3.1")
+    }
+}
+
 android {
     namespace = "com.epaperworkshop.lego_epaper_controller"
     compileSdk = flutter.compileSdkVersion
