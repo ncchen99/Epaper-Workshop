@@ -32,6 +32,7 @@ class MqttService {
 
   // 追蹤已訂閱的 topics
   final Set<String> _subscribedTopics = {};
+  final Set<String> _desiredStateTopics = {};
 
   /// 當前連線狀態
   MqttConnectionStatus get connectionStatus => _connectionStatus;
@@ -117,6 +118,7 @@ class MqttService {
           // 監聽所有收到的訊息
           await _updatesSubscription?.cancel();
           _updatesSubscription = _client!.updates?.listen(_onMessage);
+          _resubscribeStateTopics();
           return true;
         }
 
@@ -169,9 +171,26 @@ class MqttService {
 
   /// 訂閱裝置狀態 Topic
   void subscribeToDeviceState(String macAddress) {
-    if (!isConnected || _client == null) return;
-
     final topic = 'devices/$macAddress/state';
+    _desiredStateTopics.add(topic);
+    _subscribeTopicIfNeeded(topic);
+  }
+
+  /// 取消訂閱裝置狀態 Topic
+  void unsubscribeFromDeviceState(String macAddress) {
+    final topic = 'devices/$macAddress/state';
+    _desiredStateTopics.remove(topic);
+
+    if (_client == null) return;
+    if (!_subscribedTopics.contains(topic)) return;
+
+    _client!.unsubscribe(topic);
+    _subscribedTopics.remove(topic);
+    debugPrint('MQTT: Unsubscribed from $topic');
+  }
+
+  void _subscribeTopicIfNeeded(String topic) {
+    if (!isConnected || _client == null) return;
     if (_subscribedTopics.contains(topic)) return;
 
     _client!.subscribe(topic, MqttQos.atLeastOnce);
@@ -179,16 +198,12 @@ class MqttService {
     debugPrint('MQTT: Subscribed to $topic');
   }
 
-  /// 取消訂閱裝置狀態 Topic
-  void unsubscribeFromDeviceState(String macAddress) {
-    if (_client == null) return;
-
-    final topic = 'devices/$macAddress/state';
-    if (!_subscribedTopics.contains(topic)) return;
-
-    _client!.unsubscribe(topic);
-    _subscribedTopics.remove(topic);
-    debugPrint('MQTT: Unsubscribed from $topic');
+  void _resubscribeStateTopics() {
+    // Broker side subscriptions may be lost after reconnect; re-apply desired topics.
+    _subscribedTopics.clear();
+    for (final topic in _desiredStateTopics) {
+      _subscribeTopicIfNeeded(topic);
+    }
   }
 
   // ---- 私有方法 ----
@@ -346,6 +361,7 @@ class MqttService {
 
   void _onDisconnected() {
     debugPrint('MQTT: onDisconnected callback');
+    _subscribedTopics.clear();
     if (_connectionStatus != MqttConnectionStatus.connecting) {
       _updateStatus(MqttConnectionStatus.disconnected);
     }
@@ -359,6 +375,7 @@ class MqttService {
   void _onAutoReconnected() {
     debugPrint('MQTT: Auto-reconnected');
     _updateStatus(MqttConnectionStatus.connected);
+    _resubscribeStateTopics();
   }
 
   void _onMessage(List<MqttReceivedMessage<MqttMessage?>> messages) {

@@ -160,7 +160,7 @@ class DeviceCard extends StatelessWidget {
   String _getStatusText() {
     switch (device.lastStatus) {
       case 'online':
-        return 'Online';
+        return 'Ready';
       case 'success':
         return 'Success';
       case 'downloading':
