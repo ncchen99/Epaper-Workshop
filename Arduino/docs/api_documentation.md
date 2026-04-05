@@ -1,6 +1,11 @@
-# REST API Documentation for E-Paper Workshop
+# Legacy REST API Documentation for E-Paper Workshop
 
-This document describes the REST API endpoints available on the Arduino Nano ESP32 E-Paper device.
+> [!WARNING]
+> This document is kept only for historical reference.
+> The current main branch firmware uses MQTT architecture and no longer exposes these REST endpoints.
+> Please refer to `README.md` in project root and `Arduino/README.md` for current behavior.
+
+This document describes the old REST API endpoints that were available on earlier Arduino Nano ESP32 E-Paper firmware.
 
 **Base URL**: `http://epaper.local` or `http://<Device_IP>`
 

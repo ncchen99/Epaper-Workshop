@@ -1,5 +1,10 @@
 ## AntiGravity Prompt（Flutter / LEGO UI / Arduino + E-Ink Demo）
 
+> [!NOTE]
+> This file is an early design prompt draft for the prototype phase.
+> Some sections mention mock REST API integration, but the current production code in this repository uses MQTT.
+> For current implementation, refer to `Flutter/README.md` and `docs/MQTT design.md`.
+
 你是一位資深 Flutter 工程師 + UI 系統設計師。請建立一個 Flutter App（支援 iOS / Android），主題是「LEGO 風格遙控 Arduino E-Ink（電子紙）裝置」，Demo 情境：電子紙嵌入樂高相機套組中。請輸出**可直接編譯執行**的完整專案程式碼（含必要套件與範例資源），並依照以下規格完成。
 
 ---
@@ -10,7 +15,7 @@ App 用來控制遠端連線裝置的 Arduino，讓 Arduino 把圖片顯示到 E
 
 使用者在主畫面可以：
 
-1. 從 **兩張預設圖片**（預載入，顯示縮圖）中選一張 → 點「Send to Camera（送出到相機電子紙）」→ 上傳到 R2（Cloudflare R2）→ 取得 image URL → 呼叫 Arduino API（或 WebSocket/MQTT 擇一，先用 REST mock）→ Arduino 下載並更新電子紙。
+1. 從 **兩張預設圖片**（預載入，顯示縮圖）中選一張 → 點「Send to Camera（送出到相機電子紙）」→ 上傳到 R2（Cloudflare R2）→ 取得 image URL → 透過 MQTT 發送 update 指令 → Arduino 下載並更新電子紙。
 2. 點「Upload（上傳）」→ 選擇「拍照 / 從相簿選擇」→ 上傳到 R2 → 呼叫 Arduino 更新電子紙。
 3. 在畫面上顯示裝置連線狀態（Connected / Disconnected / Sending / Error），並提供「重新連線」按鈕。
 
@@ -108,13 +113,13 @@ App 用來控制遠端連線裝置的 Arduino，讓 Arduino 把圖片顯示到 E
 * `DeviceConnectionController`：管理連線狀態（mock）
 * `ImageSelectionController`：管理選取的預設圖片與上傳圖片
 * `UploadService`：上傳到 R2（先 mock，保留真實實作位置）
-* `ArduinoService`：通知 Arduino 更新電子紙（先 mock，保留真實實作位置）
+* `MqttService`：透過 MQTT 通知 Arduino 更新電子紙（可先 mock，保留真實實作位置）
 * 狀態要可追蹤：idle / uploading / sending / success / error
 
 提供一個 `config.dart`：
 
 * R2 bucket、endpoint、public base url
-* Arduino endpoint
+* MQTT broker host/port
 * mockMode true/false
 
 ---
