@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show compute;
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
@@ -64,38 +65,36 @@ class ImageProcessorService {
     try {
       // Read the image file
       final bytes = await imageFile.readAsBytes();
-      img.Image? image = img.decodeImage(bytes);
+      final result = await compute(
+        _processImageOnWorker,
+        <String, Object>{
+          'bytes': bytes,
+          'targetWidth': targetWidth,
+          'targetHeight': targetHeight,
+          'jpegQuality': AppConfig.jpegQuality,
+        },
+      );
 
-      if (image == null) {
-        return ImageProcessResult.failure('Failed to decode image');
+      final success = result['success'] as bool? ?? false;
+      if (!success) {
+        final error = result['error'] as String? ?? 'Image processing failed';
+        return ImageProcessResult.failure(error);
       }
 
-      final originalWidth = image.width;
-      final originalHeight = image.height;
-
-      // Step 1: Check aspect ratio and rotate if needed
-      // If the image is wider than tall (landscape), rotate it 90 degrees
-      if (image.width > image.height) {
-        image = img.copyRotate(image, angle: 90);
+      final jpegBytes = result['jpegBytes'] as Uint8List?;
+      if (jpegBytes == null || jpegBytes.isEmpty) {
+        return ImageProcessResult.failure('Image processing failed');
       }
 
-      // Step 2: Resize to fit the target size while maintaining aspect ratio
-      // We want the image to cover the target area, so we scale to fill
-      image = _resizeToFill(image, targetWidth, targetHeight);
-
-      // Step 3: Center crop to exactly 400x600
-      image = _centerCrop(image, targetWidth, targetHeight);
-
-      // Step 4: Encode as JPEG baseline format
-      // The `image` package produces baseline JPEG by default
-      final jpegBytes = img.encodeJpg(image, quality: AppConfig.jpegQuality);
+      final originalWidth = result['originalWidth'] as int?;
+      final originalHeight = result['originalHeight'] as int?;
 
       // Save to temporary file
       final tempDir = await getTemporaryDirectory();
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final outputPath = path.join(tempDir.path, 'epaper_$timestamp.jpg');
       final outputFile = File(outputPath);
-      await outputFile.writeAsBytes(jpegBytes);
+      await outputFile.writeAsBytes(jpegBytes, flush: true);
 
       return ImageProcessResult.ok(
         outputFile,
@@ -133,49 +132,6 @@ class ImageProcessorService {
     }
   }
 
-  /// Resize image to fill the target dimensions (cover mode)
-  ///
-  /// The resulting image will be at least as large as the target in both dimensions.
-  /// This ensures we can crop to the exact target size without any empty areas.
-  img.Image _resizeToFill(img.Image source, int targetW, int targetH) {
-    final sourceAspect = source.width / source.height;
-    final targetAspect = targetW / targetH;
-
-    int newWidth, newHeight;
-
-    if (sourceAspect > targetAspect) {
-      // Source is wider - scale by height
-      newHeight = targetH;
-      newWidth = (source.width * (targetH / source.height)).round();
-    } else {
-      // Source is taller - scale by width
-      newWidth = targetW;
-      newHeight = (source.height * (targetW / source.width)).round();
-    }
-
-    return img.copyResize(
-      source,
-      width: newWidth,
-      height: newHeight,
-      interpolation: img.Interpolation.linear,
-    );
-  }
-
-  /// Center crop the image to the exact target dimensions
-  img.Image _centerCrop(img.Image source, int targetW, int targetH) {
-    // Calculate crop offset (center the crop)
-    final x = (source.width - targetW) ~/ 2;
-    final y = (source.height - targetH) ~/ 2;
-
-    return img.copyCrop(
-      source,
-      x: x > 0 ? x : 0,
-      y: y > 0 ? y : 0,
-      width: targetW,
-      height: targetH,
-    );
-  }
-
   /// Validate that an image meets the E-Paper display requirements
   static bool validateImage(File imageFile) {
     try {
@@ -201,4 +157,83 @@ class ImageProcessorService {
       return null;
     }
   }
+}
+
+Map<String, Object> _processImageOnWorker(Map<String, Object> payload) {
+  try {
+    final bytes = payload['bytes'] as Uint8List;
+    final targetWidth = payload['targetWidth'] as int;
+    final targetHeight = payload['targetHeight'] as int;
+    final jpegQuality = payload['jpegQuality'] as int;
+
+    img.Image? image = img.decodeImage(bytes);
+    if (image == null) {
+      return <String, Object>{
+        'success': false,
+        'error': 'Failed to decode image',
+      };
+    }
+
+    final originalWidth = image.width;
+    final originalHeight = image.height;
+
+    if (image.width > image.height) {
+      image = img.copyRotate(image, angle: 90);
+    }
+
+    image = _resizeToFillImage(image, targetWidth, targetHeight);
+    image = _centerCropImage(image, targetWidth, targetHeight);
+
+    final jpegBytes = Uint8List.fromList(
+      img.encodeJpg(image, quality: jpegQuality),
+    );
+
+    return <String, Object>{
+      'success': true,
+      'jpegBytes': jpegBytes,
+      'originalWidth': originalWidth,
+      'originalHeight': originalHeight,
+    };
+  } catch (e) {
+    return <String, Object>{
+      'success': false,
+      'error': 'Image processing error: $e',
+    };
+  }
+}
+
+img.Image _resizeToFillImage(img.Image source, int targetW, int targetH) {
+  final sourceAspect = source.width / source.height;
+  final targetAspect = targetW / targetH;
+
+  int newWidth;
+  int newHeight;
+
+  if (sourceAspect > targetAspect) {
+    newHeight = targetH;
+    newWidth = (source.width * (targetH / source.height)).round();
+  } else {
+    newWidth = targetW;
+    newHeight = (source.height * (targetW / source.width)).round();
+  }
+
+  return img.copyResize(
+    source,
+    width: newWidth,
+    height: newHeight,
+    interpolation: img.Interpolation.linear,
+  );
+}
+
+img.Image _centerCropImage(img.Image source, int targetW, int targetH) {
+  final x = (source.width - targetW) ~/ 2;
+  final y = (source.height - targetH) ~/ 2;
+
+  return img.copyCrop(
+    source,
+    x: x > 0 ? x : 0,
+    y: y > 0 ? y : 0,
+    width: targetW,
+    height: targetH,
+  );
 }

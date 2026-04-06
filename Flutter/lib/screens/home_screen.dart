@@ -122,6 +122,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
     if (!mounted) return;
     setState(() => _isSending = true);
+    await WidgetsBinding.instance.endOfFrame;
     ref.read(logProvider.notifier).info('Processing image...');
 
     try {
